@@ -1,6 +1,6 @@
 {
   "name": "vscode-s3",
-  "displayName": "S3客户端",
+  "displayName": "S3 Client / S3浏览器",
   "description": "Browse and manage S3-compatible object storage",
   "version": "1.0.0",
   "publisher": "vscode-s3",
