@@ -1,0 +1,139 @@
+{
+  "name": "vscode-s3",
+  "displayName": "S3 Browser",
+  "description": "Browse and manage S3-compatible object storage",
+  "version": "1.0.0",
+  "publisher": "vscode-s3",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:s3Explorer",
+    "onCommand:s3.addConnection",
+    "onCommand:s3.editConnection",
+    "onCommand:s3.refresh",
+    "onCommand:s3.uploadFile",
+    "onCommand:s3.downloadFile",
+    "onCommand:s3.deleteObject",
+    "onCommand:s3.deleteConnection"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "s3-browser",
+          "title": "S3 Browser",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "s3-browser": [
+        {
+          "id": "s3Explorer",
+          "name": "S3 Explorer"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "s3.addConnection",
+        "title": "Add S3 Connection...",
+        "icon": "$(plus)"
+      },
+      {
+        "command": "s3.refresh",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "s3.uploadFile",
+        "title": "Upload File...",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "s3.downloadFile",
+        "title": "Download...",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "s3.deleteObject",
+        "title": "Delete",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "s3.editConnection",
+        "title": "Edit Connection...",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "s3.deleteConnection",
+        "title": "Remove Connection",
+        "icon": "$(close)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "s3.addConnection",
+          "group": "navigation"
+        },
+        {
+          "command": "s3.refresh",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "s3.uploadFile",
+          "when": "view == s3Explorer && viewItem == s3Connection",
+          "group": "inline"
+        },
+        {
+          "command": "s3.uploadFile",
+          "when": "view == s3Explorer && viewItem == s3Folder",
+          "group": "inline"
+        },
+        {
+          "command": "s3.downloadFile",
+          "when": "view == s3Explorer && viewItem == s3File",
+          "group": "inline"
+        },
+        {
+          "command": "s3.editConnection",
+          "when": "view == s3Explorer && viewItem == s3Connection",
+          "group": "inline"
+        },
+        {
+          "command": "s3.deleteObject",
+          "when": "view == s3Explorer && (viewItem == s3File || viewItem == s3Folder)",
+          "group": "1_modification"
+        },
+        {
+          "command": "s3.deleteConnection",
+          "when": "view == s3Explorer && viewItem == s3Connection",
+          "group": "1_modification"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "node scripts/build.js",
+    "compile": "node scripts/build.js",
+    "watch": "node scripts/build.js --watch",
+    "lint": "echo 'no linter configured'"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.500.0"
+  }
+}
