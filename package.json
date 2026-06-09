@@ -18,7 +18,9 @@
     "onCommand:s3.uploadFile",
     "onCommand:s3.downloadFile",
     "onCommand:s3.deleteObject",
-    "onCommand:s3.deleteConnection"
+    "onCommand:s3.deleteConnection",
+    "onCommand:s3.copyPath",
+    "onCommand:s3.previewFile"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -74,6 +76,16 @@
         "command": "s3.deleteConnection",
         "title": "Remove Connection",
         "icon": "$(close)"
+      },
+      {
+        "command": "s3.copyPath",
+        "title": "Copy Path",
+        "icon": "$(link)"
+      },
+      {
+        "command": "s3.previewFile",
+        "title": "Preview File",
+        "icon": "$(preview)"
       }
     ],
     "menus": {
@@ -101,6 +113,11 @@
         {
           "command": "s3.downloadFile",
           "when": "view == s3Explorer && viewItem == s3File",
+          "group": "inline"
+        },
+        {
+          "command": "s3.copyPath",
+          "when": "view == s3Explorer && (viewItem == s3File || viewItem == s3Folder)",
           "group": "inline"
         },
         {

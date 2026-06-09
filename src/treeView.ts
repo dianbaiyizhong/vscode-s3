@@ -58,6 +58,11 @@ export class S3TreeItem extends vscode.TreeItem {
       this.tooltip = `${key}\nSize: ${formatSize(size)}\nModified: ${formatDate(lastModified)}`;
       this.description = `${formatSize(size)}`;
       this.iconPath = vscode.ThemeIcon.File;
+      this.command = {
+        command: 's3.previewFile',
+        title: 'Preview',
+        arguments: [this],
+      };
     }
   }
 

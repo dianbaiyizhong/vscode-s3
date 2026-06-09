@@ -3,11 +3,13 @@ import * as path from 'path';
 import { ConnectionManager } from './connectionManager';
 import { createClient, uploadFile, downloadFile, deleteObject, deleteFolder, testConnection } from './s3Client';
 import { S3ExplorerProvider, S3TreeItem } from './treeView';
+import { PreviewManager, isTextFile, isImageFile, isPreviewable } from './previewManager';
 
 export function registerCommands(
   context: vscode.ExtensionContext,
   connectionManager: ConnectionManager,
-  treeProvider: S3ExplorerProvider
+  treeProvider: S3ExplorerProvider,
+  previewManager: PreviewManager
 ): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('s3.addConnection', () =>
@@ -30,6 +32,12 @@ export function registerCommands(
     ),
     vscode.commands.registerCommand('s3.deleteConnection', (item: S3TreeItem) =>
       handleDeleteConnection(connectionManager, treeProvider, item)
+    ),
+    vscode.commands.registerCommand('s3.copyPath', (item: S3TreeItem) =>
+      handleCopyPath(item)
+    ),
+    vscode.commands.registerCommand('s3.previewFile', (item: S3TreeItem) =>
+      handlePreviewFile(connectionManager, previewManager, item)
     )
   );
 }
@@ -303,6 +311,52 @@ async function handleDelete(
   } catch (err: any) {
     vscode.window.showErrorMessage(`Delete failed: ${err.message}`);
   }
+}
+
+async function handlePreviewFile(
+  connectionManager: ConnectionManager,
+  previewManager: PreviewManager,
+  item: S3TreeItem
+): Promise<void> {
+  if (!item || item.contextValue !== 's3File') return;
+
+  const conn = connectionManager.getConnection(item.connectionId);
+  const secrets = await connectionManager.getCredentials(item.connectionId);
+  if (!conn || !secrets) return;
+
+  if (!isPreviewable(item.key)) {
+    vscode.window.showInformationMessage('Preview not supported for this file type');
+    return;
+  }
+
+  const localPath = previewManager.getTempPath(item.connectionId, item.key);
+  previewManager.ensureParentDir(localPath);
+
+  const client = createClient(conn, secrets);
+
+  try {
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Window, title: 'Opening file...', cancellable: false },
+      () => downloadFile(client, conn.bucket, item.key, localPath)
+    );
+
+    previewManager.registerMapping(localPath, item.connectionId, conn.bucket, item.key);
+
+    if (isTextFile(item.key)) {
+      const doc = await vscode.workspace.openTextDocument(localPath);
+      await vscode.window.showTextDocument(doc, { preview: true });
+    } else {
+      await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(localPath));
+    }
+  } catch (err: any) {
+    vscode.window.showErrorMessage(`Failed to open file: ${err.message}`);
+  }
+}
+
+function handleCopyPath(item: S3TreeItem): void {
+  if (!item) return;
+  vscode.env.clipboard.writeText(item.key);
+  vscode.window.setStatusBarMessage('$(link) Path copied', 2000);
 }
 
 async function handleEditConnection(
