@@ -1,6 +1,6 @@
 {
   "name": "vscode-s3",
-  "displayName": "S3 Browser",
+  "displayName": "S3客户端",
   "description": "Browse and manage S3-compatible object storage",
   "version": "1.0.0",
   "publisher": "vscode-s3",
@@ -26,7 +26,7 @@
       "activitybar": [
         {
           "id": "s3-browser",
-          "title": "S3 Browser",
+          "title": "S3客户端",
           "icon": "resources/icon.svg"
         }
       ]
