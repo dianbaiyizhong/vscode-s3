@@ -1,5 +1,5 @@
 {
-  "displayName": "S3 Client / S3 Browser",
+  "displayName": "S3 Browser",
   "description": "Browse and manage S3-compatible object storage",
   "viewContainerTitle": "S3 Browser",
   "viewName": "S3 Explorer",

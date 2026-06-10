@@ -2,7 +2,7 @@
 
 > 在 VS Code 中直接浏览和管理任意 S3 兼容的对象存储 | Browse and manage any S3-compatible object storage directly inside VS Code
 
-![VS Code](https://img.shields.io/badge/VS_Code-1.85%2B-007ACC?logo=visual-studio-code)
+![VS Code](https://img.shields.io/badge/VS_Code-1.89%2B-007ACC?logo=visual-studio-code)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 ---
@@ -13,12 +13,17 @@
 |---|---|---|
 | 🔗 | **Multi-connection** | 添加多个 S3 连接，支持任意 S3 兼容服务 |
 | 🔐 | **Secure Storage** | AK/SK 通过 VS Code SecretStorage 加密存储 |
-| 📂 | **Tree View** | 三级树结构浏览：连接 → 文件夹 → 文件 |
-| ⬆️ | **Upload** | 右键文件夹/连接根，上传文件到当前路径 |
-| ⬇️ | **Download** | 右键文件，保存到本地 |
-| 🗑️ | **Delete** | 删除文件或递归删除文件夹 |
-| ✏️ | **Edit** | 编辑已有连接的参数 |
-| 🧪 | **Test Connection** | 添加/编辑连接时可选测试连通性 |
+| 📂 | **Tree View** | 三级树结构浏览：连接 → 文件夹 → 文件，按类型显示不同图标 |
+| ⬆️ | **Upload** | 右键文件夹上传，或从系统文件管理器拖拽文件到目标目录 |
+| ⬇️ | **Download** | 右键下载文件，支持多选批量下载 |
+| 👁️ | **Preview** | 文件行右侧预览按钮：文本文件可编辑并保存回 S3，图片直接打开 |
+| ✏️ | **Rename** | 内联重命名（文件/文件夹），带校验和回滚 |
+| 📁 | **New Folder** | 在任意路径下创建新文件夹 |
+| 🔗 | **Copy Path** | 复制文件的 S3 Key 到剪贴板 |
+| 🗑️ | **Delete** | 删除文件或递归删除文件夹，支持多选 |
+| ⚙️ | **Manage Connections** | 添加、编辑、删除连接，添加时可选测试连通性 |
+| 🌐 | **i18n** | 中英文自动切换（跟随 VS Code 显示语言） |
+| 🔄 | **Refresh** | 一键刷新当前视图 |
 
 ---
 
@@ -27,7 +32,6 @@
 ### 方法一：直接安装 VSIX（推荐）
 
 ```bash
-# 下载最新版 .vsix 后执行
 code --install-extension vscode-s3-1.0.0.vsix --force
 ```
 
@@ -38,7 +42,7 @@ code --install-extension vscode-s3-1.0.0.vsix --force
 ```bash
 git clone https://github.com/your-username/vscode-s3.git
 cd vscode-s3
-npm install --cache /tmp/npm-cache
+npm install
 npm run compile
 npx vsce package
 code --install-extension vscode-s3-1.0.0.vsix --force
@@ -60,12 +64,12 @@ code --install-extension vscode-s3-1.0.0.vsix --force
 | Bucket | `my-bucket` | 桶名称 |
 | Path Style? | Yes / No | MinIO/Ceph 选 Yes，AWS S3 选 No |
 | Access Key ID | `admin` | 访问密钥 ID |
-| Secret Access Key | `password` | 访问密钥（会加密存储） |
+| Secret Access Key | `password` | 访问密钥（SecretStorage 加密存储） |
 
-4. 连接成功 → 展开连接查看文件列表
-5. **上传**：右键文件夹 → Upload File
-6. **下载**：右键文件 → Download
-7. **删除**：右键文件/文件夹 → Delete
+4. 点击文件行右侧的 **预览图标** 打开文件：
+   - 文本/代码文件 → 在编辑器中打开，可编辑，保存时自动写回 S3
+   - 图片/视频文件 → 用系统默认程序打开
+5. **更多操作**：右键文件/文件夹呼出上下文菜单
 
 ---
 
@@ -81,7 +85,7 @@ code --install-extension vscode-s3-1.0.0.vsix --force
 | **七牛 Kodo** | `https://s3-cn-east-1.qiniucs.com` | No |
 | **Ceph RGW** | `http://ceph-radosgw:7480` | Yes |
 | **DigitalOcean Spaces** | `https://nyc3.digitaloceanspaces.com` | No |
-| **Cloudflare R2** | `https://<account>.r2.cloudflarestorage.com` | No |
+| **Cloudflare R2** | `https://\<account\>.r2.cloudflarestorage.com` | No |
 | **Backblaze B2** | `https://s3.us-west-004.backblazeb2.com` | No |
 | **Wasabi** | `https://s3.us-east-2.wasabisys.com` | No |
 
@@ -89,7 +93,7 @@ code --install-extension vscode-s3-1.0.0.vsix --force
 
 ## 🔒 Security | 安全
 
-- **Access Key / Secret Key** 使用 VS Code 的 [`SecretStorage`](https://code.visualstudio.com/api/references/vscode-api#SecretStorage) 加密存储，不会以明文写入配置文件
+- **Access Key / Secret Key** 使用 VS Code [`SecretStorage`](https://code.visualstudio.com/api/references/vscode-api#SecretStorage) 加密存储，不以明文写入配置文件
 - 连接元数据（endpoint、bucket、region 等）存储在 `globalState` 中
 - 所有 S3 API 请求直接从 VS Code 发出，不经第三方代理
 
@@ -99,9 +103,9 @@ code --install-extension vscode-s3-1.0.0.vsix --force
 
 ```bash
 # 安装依赖
-npm install --cache /tmp/npm-cache
+npm install
 
-# 开发构建
+# 构建
 npm run compile
 
 # 启动调试（F5）
@@ -116,14 +120,19 @@ npx vsce package
 ```
 vscode-s3/
 ├── src/
-│   ├── extension.ts          # 入口：激活、注册视图和命令
+│   ├── extension.ts          # 入口：激活、创建视图、注册命令和 drag-and-drop
 │   ├── connectionManager.ts  # 连接 CRUD，AK/SK 存入 SecretStorage
-│   ├── s3Client.ts           # S3 API 封装（List/Upload/Download/Delete）
-│   ├── treeView.ts           # TreeDataProvider + S3TreeItem
+│   ├── s3Client.ts           # S3 API 封装（List/Upload/Download/Delete/Rename）
+│   ├── treeView.ts           # TreeDataProvider + S3TreeItem，多选 + 拖放支持
+│   ├── previewManager.ts     # 本地临时文件管理，编辑保存回写 S3
+│   ├── i18n.ts               # 运行时中英文切换
 │   └── commands.ts           # 所有命令处理器
 ├── scripts/build.js          # esbuild 构建脚本
 ├── resources/icon.svg        # Activity Bar 图标
-└── package.json              # 扩展清单
+├── logo.png                  # 市场图标
+├── package.json
+├── package.nls.json
+└── package.nls.zh-cn.json
 ```
 
 ---

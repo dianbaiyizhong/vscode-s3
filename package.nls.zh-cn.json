@@ -1,5 +1,5 @@
 {
-  "displayName": "S3 Client / S3 浏览器",
+  "displayName": "S3 浏览器",
   "description": "在 VS Code 中浏览和管理任意 S3 兼容的对象存储",
   "viewContainerTitle": "S3 浏览器",
   "viewName": "S3 资源管理器",

@@ -2,8 +2,9 @@
   "name": "vscode-s3",
   "displayName": "%displayName%",
   "description": "%description%",
+  "icon": "logo.png",
   "version": "1.0.0",
-  "publisher": "vscode-s3",
+  "publisher": "nntk",
   "engines": {
     "vscode": "^1.89.0"
   },
