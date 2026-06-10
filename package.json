@@ -20,7 +20,9 @@
     "onCommand:s3.deleteObject",
     "onCommand:s3.deleteConnection",
     "onCommand:s3.copyPath",
-    "onCommand:s3.previewFile"
+    "onCommand:s3.previewFile",
+    "onCommand:s3.rename",
+    "onCommand:s3.newFolder"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -86,6 +88,16 @@
         "command": "s3.previewFile",
         "title": "Preview File",
         "icon": "$(preview)"
+      },
+      {
+        "command": "s3.rename",
+        "title": "Rename...",
+        "icon": "$(symbol-misc)"
+      },
+      {
+        "command": "s3.newFolder",
+        "title": "New Folder...",
+        "icon": "$(new-folder)"
       }
     ],
     "menus": {
@@ -121,19 +133,34 @@
           "group": "inline"
         },
         {
+          "command": "s3.refresh",
+          "when": "view == s3Explorer && (viewItem == s3Folder || viewItem == s3Connection)",
+          "group": "inline"
+        },
+        {
           "command": "s3.editConnection",
           "when": "view == s3Explorer && viewItem == s3Connection",
           "group": "inline"
         },
         {
-          "command": "s3.deleteObject",
+          "command": "s3.rename",
           "when": "view == s3Explorer && (viewItem == s3File || viewItem == s3Folder)",
           "group": "1_modification"
         },
         {
+          "command": "s3.newFolder",
+          "when": "view == s3Explorer && (viewItem == s3Connection || viewItem == s3Folder)",
+          "group": "1_modification"
+        },
+        {
+          "command": "s3.deleteObject",
+          "when": "view == s3Explorer && (viewItem == s3File || viewItem == s3Folder)",
+          "group": "2_delete"
+        },
+        {
           "command": "s3.deleteConnection",
           "when": "view == s3Explorer && viewItem == s3Connection",
-          "group": "1_modification"
+          "group": "2_delete"
         }
       ]
     }

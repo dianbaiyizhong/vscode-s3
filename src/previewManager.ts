@@ -25,22 +25,31 @@ export const IMAGE_EXTENSIONS = new Set([
   'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico', 'avif', 'tiff', 'tif',
 ]);
 
-function getExt(key: string): string {
+export const VIDEO_EXTENSIONS = new Set([
+  'mp4', 'avi', 'mov', 'mkv', 'wmv', 'flv', 'webm', 'm4v', '3gp', 'mpg', 'mpeg',
+]);
+
+export function getExt(key: string): string {
   const idx = key.lastIndexOf('.');
   if (idx === -1) return '';
   return key.slice(idx + 1).toLowerCase();
 }
 
 export function isTextFile(key: string): boolean {
-  return TEXT_EXTENSIONS.has(getExt(key));
+  const ext = getExt(key);
+  return ext === '' || TEXT_EXTENSIONS.has(ext);
 }
 
 export function isImageFile(key: string): boolean {
   return IMAGE_EXTENSIONS.has(getExt(key));
 }
 
+export function isVideoFile(key: string): boolean {
+  return VIDEO_EXTENSIONS.has(getExt(key));
+}
+
 export function isPreviewable(key: string): boolean {
-  return isTextFile(key) || isImageFile(key);
+  return isTextFile(key) || isImageFile(key) || isVideoFile(key);
 }
 
 export class PreviewManager {

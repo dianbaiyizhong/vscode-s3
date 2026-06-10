@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { ConnectionManager, S3Connection } from './connectionManager';
 import { createClient, listObjects, S3ObjectInfo } from './s3Client';
+import { isTextFile, isImageFile, isVideoFile } from './previewManager';
 
 function getLabel(key: string, isFolder: boolean): string {
   const normalized = key.replace(/\/$/, '');
@@ -57,7 +58,15 @@ export class S3TreeItem extends vscode.TreeItem {
       this.contextValue = 's3File';
       this.tooltip = `${key}\nSize: ${formatSize(size)}\nModified: ${formatDate(lastModified)}`;
       this.description = `${formatSize(size)}`;
-      this.iconPath = vscode.ThemeIcon.File;
+
+      if (isImageFile(key) || isVideoFile(key)) {
+        this.iconPath = new vscode.ThemeIcon('file-media');
+      } else if (isTextFile(key)) {
+        this.iconPath = new vscode.ThemeIcon('file-text');
+      } else {
+        this.iconPath = vscode.ThemeIcon.File;
+      }
+
       this.command = {
         command: 's3.previewFile',
         title: 'Preview',
@@ -74,6 +83,7 @@ export class S3TreeItem extends vscode.TreeItem {
 
 export class S3ExplorerProvider implements vscode.TreeDataProvider<S3TreeItem> {
   static connectionManager: ConnectionManager | undefined;
+  static treeView: vscode.TreeView<S3TreeItem> | undefined;
 
   private _onDidChangeTreeData = new vscode.EventEmitter<S3TreeItem | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;

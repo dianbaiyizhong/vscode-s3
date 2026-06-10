@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { ConnectionManager } from './connectionManager';
-import { createClient, uploadFile, downloadFile, deleteObject, deleteFolder, testConnection } from './s3Client';
+import { createClient, uploadFile, downloadFile, deleteObject, deleteFolder, renameObject, renameFolder, createFolder, testConnection } from './s3Client';
 import { S3ExplorerProvider, S3TreeItem } from './treeView';
 import { PreviewManager, isTextFile, isImageFile, isPreviewable } from './previewManager';
 
@@ -38,8 +38,25 @@ export function registerCommands(
     ),
     vscode.commands.registerCommand('s3.previewFile', (item: S3TreeItem) =>
       handlePreviewFile(connectionManager, previewManager, item)
+    ),
+    vscode.commands.registerCommand('s3.rename', (item: S3TreeItem) =>
+      handleRename(connectionManager, treeProvider, item)
+    ),
+    vscode.commands.registerCommand('s3.newFolder', (item: S3TreeItem) =>
+      handleNewFolder(connectionManager, treeProvider, item)
     )
   );
+}
+
+function getSelectionOrDefault(item: S3TreeItem, ...validContexts: string[]): S3TreeItem[] {
+  const selection = S3ExplorerProvider.treeView?.selection;
+  if (selection && selection.length > 1 && selection.includes(item)) {
+    return selection.filter(i => validContexts.length === 0 || validContexts.includes(i.contextValue));
+  }
+  if (item && (validContexts.length === 0 || validContexts.includes(item.contextValue))) {
+    return [item];
+  }
+  return [];
 }
 
 async function addConnection(
@@ -218,44 +235,75 @@ async function handleDownload(
   connectionManager: ConnectionManager,
   item: S3TreeItem
 ): Promise<void> {
-  if (!item || item.contextValue !== 's3File') {
+  const items = getSelectionOrDefault(item, 's3File');
+  if (items.length === 0) {
     vscode.window.showErrorMessage('Please select a file to download');
     return;
   }
 
-  const conn = connectionManager.getConnection(item.connectionId);
-  if (!conn) {
-    vscode.window.showErrorMessage('Connection not found');
+  const files = items.filter(i => i.contextValue === 's3File');
+  if (files.length === 0) {
+    vscode.window.showErrorMessage('Please select a file to download');
     return;
   }
 
-  const secrets = await connectionManager.getCredentials(item.connectionId);
-  if (!secrets) {
-    vscode.window.showErrorMessage('Credentials not found');
-    return;
-  }
+  const conn = connectionManager.getConnection(files[0].connectionId);
+  if (!conn) { vscode.window.showErrorMessage('Connection not found'); return; }
 
-  const fileName = path.basename(item.key);
-  const uri = await vscode.window.showSaveDialog({
-    defaultUri: vscode.Uri.file(fileName),
-    saveLabel: 'Download',
-  });
-  if (!uri) return;
+  const secrets = await connectionManager.getCredentials(files[0].connectionId);
+  if (!secrets) { vscode.window.showErrorMessage('Credentials not found'); return; }
 
   const client = createClient(conn, secrets);
 
-  try {
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: `Downloading ${fileName}...`,
-        cancellable: false,
-      },
-      () => downloadFile(client, conn.bucket, item.key, uri.fsPath)
-    );
-    vscode.window.showInformationMessage(`Downloaded ${fileName} successfully`);
-  } catch (err: any) {
-    vscode.window.showErrorMessage(`Download failed: ${err.message}`);
+  if (files.length === 1) {
+    const fileName = path.basename(files[0].key);
+    const uri = await vscode.window.showSaveDialog({
+      defaultUri: vscode.Uri.file(fileName),
+      saveLabel: 'Download',
+    });
+    if (!uri) return;
+    try {
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: `Downloading ${fileName}...`, cancellable: false },
+        () => downloadFile(client, conn.bucket, files[0].key, uri.fsPath)
+      );
+      vscode.window.showInformationMessage(`Downloaded ${fileName}`);
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Download failed: ${err.message}`);
+    }
+    return;
+  }
+
+  const dirUri = await vscode.window.showOpenDialog({
+    canSelectFolders: true,
+    canSelectFiles: false,
+    openLabel: 'Download All Here',
+  });
+  if (!dirUri) return;
+  const baseDir = dirUri[0].fsPath;
+
+  let successCount = 0;
+  let failCount = 0;
+
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `Downloading ${files.length} files...`, cancellable: false },
+    async () => {
+      for (const f of files) {
+        const localPath = path.join(baseDir, path.basename(f.key));
+        try {
+          await downloadFile(client, conn.bucket, f.key, localPath);
+          successCount++;
+        } catch {
+          failCount++;
+        }
+      }
+    }
+  );
+
+  if (failCount === 0) {
+    vscode.window.showInformationMessage(`Downloaded ${successCount} file(s) to ${baseDir}`);
+  } else {
+    vscode.window.showWarningMessage(`Downloaded ${successCount} file(s), ${failCount} failed`);
   }
 }
 
@@ -264,52 +312,56 @@ async function handleDelete(
   treeProvider: S3ExplorerProvider,
   item: S3TreeItem
 ): Promise<void> {
-  if (!item) {
+  const items = getSelectionOrDefault(item, 's3File', 's3Folder');
+  if (items.length === 0) {
     vscode.window.showErrorMessage('Please select a file or folder');
     return;
   }
 
-  const conn = connectionManager.getConnection(item.connectionId);
-  if (!conn) {
-    vscode.window.showErrorMessage('Connection not found');
-    return;
-  }
+  const conn = connectionManager.getConnection(items[0].connectionId);
+  if (!conn) { vscode.window.showErrorMessage('Connection not found'); return; }
 
-  const secrets = await connectionManager.getCredentials(item.connectionId);
-  if (!secrets) {
-    vscode.window.showErrorMessage('Credentials not found');
-    return;
-  }
-
-  const name = getLabel(item.key, item.isFolder);
-  const message = item.isFolder
-    ? `Delete folder "${name}" and ALL its contents?`
-    : `Delete "${name}"?`;
-
-  const confirm = await vscode.window.showWarningMessage(message, 'Delete', 'Cancel');
-  if (confirm !== 'Delete') return;
+  const secrets = await connectionManager.getCredentials(items[0].connectionId);
+  if (!secrets) { vscode.window.showErrorMessage('Credentials not found'); return; }
 
   const client = createClient(conn, secrets);
 
-  try {
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: `Deleting ${name}...`,
-        cancellable: false,
-      },
-      async () => {
-        if (item.isFolder) {
-          await deleteFolder(client, conn.bucket, item.key);
-        } else {
-          await deleteObject(client, conn.bucket, item.key);
+  const confirmMsg = items.length === 1
+    ? items[0].isFolder
+      ? `Delete folder "${getLabel(items[0].key, true)}" and ALL its contents?`
+      : `Delete "${getLabel(items[0].key, false)}"?`
+    : `Delete ${items.length} selected item(s)?`;
+
+  const confirm = await vscode.window.showWarningMessage(confirmMsg, 'Delete', 'Cancel');
+  if (confirm !== 'Delete') return;
+
+  let successCount = 0;
+  let failCount = 0;
+
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `Deleting ${items.length} item(s)...`, cancellable: false },
+    async () => {
+      for (const target of items) {
+        try {
+          if (target.isFolder) {
+            await deleteFolder(client, conn.bucket, target.key);
+          } else {
+            await deleteObject(client, conn.bucket, target.key);
+          }
+          successCount++;
+        } catch {
+          failCount++;
         }
       }
-    );
-    vscode.window.showInformationMessage(`Deleted "${name}" successfully`);
-    treeProvider.refresh();
-  } catch (err: any) {
-    vscode.window.showErrorMessage(`Delete failed: ${err.message}`);
+    }
+  );
+
+  treeProvider.refresh();
+
+  if (failCount === 0) {
+    vscode.window.showInformationMessage(`Deleted ${successCount} item(s) successfully`);
+  } else {
+    vscode.window.showWarningMessage(`Deleted ${successCount} item(s), ${failCount} failed`);
   }
 }
 
@@ -350,6 +402,95 @@ async function handlePreviewFile(
     }
   } catch (err: any) {
     vscode.window.showErrorMessage(`Failed to open file: ${err.message}`);
+  }
+}
+
+async function handleRename(
+  connectionManager: ConnectionManager,
+  treeProvider: S3ExplorerProvider,
+  item: S3TreeItem
+): Promise<void> {
+  if (!item || (item.contextValue !== 's3File' && item.contextValue !== 's3Folder')) {
+    vscode.window.showErrorMessage('Please select a file or folder');
+    return;
+  }
+
+  const conn = connectionManager.getConnection(item.connectionId);
+  const secrets = await connectionManager.getCredentials(item.connectionId);
+  if (!conn || !secrets) { vscode.window.showErrorMessage('Connection not found'); return; }
+
+  const client = createClient(conn, secrets);
+  const oldName = getLabel(item.key, item.isFolder);
+  const prefix = item.isFolder
+    ? item.key.slice(0, item.key.length - oldName.length)
+    : item.key.slice(0, item.key.length - oldName.length - (item.key.endsWith('/') ? 1 : 0));
+  const prefixPath = item.isFolder ? item.key.slice(0, -oldName.length) : item.key.slice(0, -oldName.length);
+
+  const newName = await vscode.window.showInputBox({
+    prompt: item.isFolder ? 'New folder name' : 'New file name',
+    value: oldName,
+    validateInput: (v) => (v.trim() ? null : 'Name is required'),
+    ignoreFocusOut: true,
+  });
+  if (!newName || newName === oldName) return;
+
+  const oldKey = item.key;
+  const newKey = item.isFolder ? prefixPath + newName + '/' : prefixPath + newName;
+
+  try {
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: `Renaming...`, cancellable: false },
+      async () => {
+        if (item.isFolder) {
+          await renameFolder(client, conn.bucket, oldKey, newKey);
+        } else {
+          await renameObject(client, conn.bucket, oldKey, newKey);
+        }
+      }
+    );
+    vscode.window.showInformationMessage(`Renamed to "${newName}"`);
+    treeProvider.refresh();
+  } catch (err: any) {
+    vscode.window.showErrorMessage(`Rename failed: ${err.message}`);
+  }
+}
+
+async function handleNewFolder(
+  connectionManager: ConnectionManager,
+  treeProvider: S3ExplorerProvider,
+  item: S3TreeItem
+): Promise<void> {
+  if (!item || (item.contextValue !== 's3Connection' && item.contextValue !== 's3Folder')) {
+    vscode.window.showErrorMessage('Please select a connection or folder');
+    return;
+  }
+
+  const conn = connectionManager.getConnection(item.connectionId);
+  const secrets = await connectionManager.getCredentials(item.connectionId);
+  if (!conn || !secrets) { vscode.window.showErrorMessage('Connection not found'); return; }
+
+  const client = createClient(conn, secrets);
+  const parentPrefix = item.contextValue === 's3Folder' ? item.key : '';
+
+  const folderName = await vscode.window.showInputBox({
+    prompt: 'New folder name',
+    placeHolder: 'my-folder',
+    validateInput: (v) => (v.trim() ? null : 'Folder name is required'),
+    ignoreFocusOut: true,
+  });
+  if (!folderName) return;
+
+  const fullKey = parentPrefix + folderName;
+
+  try {
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: 'Creating folder...', cancellable: false },
+      () => createFolder(client, conn.bucket, fullKey)
+    );
+    vscode.window.showInformationMessage(`Created folder "${folderName}"`);
+    treeProvider.refresh();
+  } catch (err: any) {
+    vscode.window.showErrorMessage(`Create folder failed: ${err.message}`);
   }
 }
 

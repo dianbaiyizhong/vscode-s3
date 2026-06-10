@@ -6,6 +6,7 @@ import {
   ListObjectsCommand,
   PutObjectCommand,
   GetObjectCommand,
+  CopyObjectCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
   ObjectIdentifier,
@@ -207,6 +208,114 @@ export async function deleteFolder(
     if (!truncated) break;
     continuationToken = nextToken;
   }
+}
+
+export async function renameObject(
+  client: S3Client,
+  bucket: string,
+  oldKey: string,
+  newKey: string
+): Promise<void> {
+  await client.send(
+    new CopyObjectCommand({
+      Bucket: bucket,
+      CopySource: `/${bucket}/${oldKey}`,
+      Key: newKey,
+    })
+  );
+  await client.send(
+    new DeleteObjectCommand({
+      Bucket: bucket,
+      Key: oldKey,
+    })
+  );
+}
+
+export async function renameFolder(
+  client: S3Client,
+  bucket: string,
+  oldPrefix: string,
+  newPrefix: string
+): Promise<void> {
+  let continuationToken: string | undefined;
+  const objectsToCopy: { oldKey: string; newKey: string }[] = [];
+
+  while (true) {
+    let objects: { Key?: string }[] | undefined;
+    let truncated: boolean | undefined;
+    let nextToken: string | undefined;
+
+    try {
+      const response = await client.send(
+        new ListObjectsV2Command({
+          Bucket: bucket,
+          Prefix: oldPrefix,
+          ContinuationToken: continuationToken,
+        })
+      );
+      objects = response.Contents;
+      truncated = response.IsTruncated;
+      nextToken = response.NextContinuationToken;
+    } catch {
+      const response = await client.send(
+        new ListObjectsCommand({
+          Bucket: bucket,
+          Prefix: oldPrefix,
+          Marker: continuationToken,
+        })
+      );
+      objects = response.Contents;
+      truncated = response.IsTruncated;
+      nextToken = response.IsTruncated ? response.NextMarker : undefined;
+    }
+
+    if (!objects || objects.length === 0) break;
+
+    for (const obj of objects) {
+      if (obj.Key) {
+        const newObjKey = newPrefix + obj.Key.slice(oldPrefix.length);
+        objectsToCopy.push({ oldKey: obj.Key, newKey: newObjKey });
+      }
+    }
+
+    if (!truncated) break;
+    continuationToken = nextToken;
+  }
+
+  for (const { oldKey, newKey } of objectsToCopy) {
+    await client.send(
+      new CopyObjectCommand({
+        Bucket: bucket,
+        CopySource: `/${bucket}/${oldKey}`,
+        Key: newKey,
+      })
+    );
+  }
+
+  if (objectsToCopy.length > 0) {
+    const objectIds: ObjectIdentifier[] = objectsToCopy.map(({ oldKey }) => ({ Key: oldKey }));
+    await client.send(
+      new DeleteObjectsCommand({
+        Bucket: bucket,
+        Delete: { Objects: objectIds, Quiet: true },
+      })
+    );
+  }
+}
+
+export async function createFolder(
+  client: S3Client,
+  bucket: string,
+  key: string
+): Promise<void> {
+  const folderKey = key.endsWith('/') ? key : key + '/';
+  await client.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: folderKey,
+      Body: '',
+    })
+  );
 }
 
 export async function testConnection(
