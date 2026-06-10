@@ -3,7 +3,8 @@ import * as path from 'path';
 import { ConnectionManager } from './connectionManager';
 import { createClient, uploadFile, downloadFile, deleteObject, deleteFolder, renameObject, renameFolder, createFolder, testConnection } from './s3Client';
 import { S3ExplorerProvider, S3TreeItem } from './treeView';
-import { PreviewManager, isTextFile, isImageFile, isPreviewable } from './previewManager';
+import { PreviewManager, isTextFile, isPreviewable } from './previewManager';
+import { t } from './i18n';
 
 export function registerCommands(
   context: vscode.ExtensionContext,
@@ -64,71 +65,67 @@ async function addConnection(
   treeProvider: S3ExplorerProvider
 ): Promise<void> {
   const name = await vscode.window.showInputBox({
-    prompt: 'Connection name (e.g., My MinIO)',
-    placeHolder: 'My S3 Storage',
-    validateInput: (v) => (v.trim() ? null : 'Name is required'),
+    prompt: t('prompt_connectionName'),
+    placeHolder: t('prompt_connectionName_placeholder'),
+    validateInput: (v) => (v.trim() ? null : t('val_nameRequired')),
     ignoreFocusOut: true,
   });
   if (!name) return;
 
   const endpoint = await vscode.window.showInputBox({
-    prompt: 'S3 Endpoint URL',
-    placeHolder: 'https://s3.example.com',
+    prompt: t('prompt_endpoint'),
+    placeHolder: t('prompt_endpoint_placeholder'),
     validateInput: (v) => {
-      if (!v.trim()) return 'Endpoint is required';
-      try {
-        new URL(v);
-        return null;
-      } catch {
-        return 'Invalid URL';
-      }
+      if (!v.trim()) return t('val_endpointRequired');
+      try { new URL(v); return null; }
+      catch { return t('val_invalidUrl'); }
     },
     ignoreFocusOut: true,
   });
   if (!endpoint) return;
 
   const region = await vscode.window.showInputBox({
-    prompt: 'Region (default: us-east-1)',
-    placeHolder: 'us-east-1',
+    prompt: t('prompt_region'),
+    placeHolder: t('prompt_region_placeholder'),
     value: 'us-east-1',
     ignoreFocusOut: true,
   });
   if (!region) return;
 
   const bucket = await vscode.window.showInputBox({
-    prompt: 'Bucket name',
-    placeHolder: 'my-bucket',
-    validateInput: (v) => (v.trim() ? null : 'Bucket name is required'),
+    prompt: t('prompt_bucket'),
+    placeHolder: t('prompt_bucket_placeholder'),
+    validateInput: (v) => (v.trim() ? null : t('val_bucketRequired')),
     ignoreFocusOut: true,
   });
   if (!bucket) return;
 
   const pathStyleStr = await vscode.window.showQuickPick(
     [
-      { label: 'Yes', description: 'Use path-style URLs (e.g., http://host/bucket/key) - common for MinIO, Ceph, etc.' },
-      { label: 'No', description: 'Use virtual-hosted-style URLs (e.g., http://bucket.host/key) - standard AWS S3' },
+      { label: t('prompt_pathStyle_yes'), description: t('prompt_pathStyle_yes_desc') },
+      { label: t('prompt_pathStyle_no'), description: t('prompt_pathStyle_no_desc') },
     ],
     {
-      placeHolder: 'Use path-style endpoint?',
+      placeHolder: t('prompt_pathStyle'),
       ignoreFocusOut: true,
     }
   );
   if (!pathStyleStr) return;
-  const forcePathStyle = pathStyleStr.label === 'Yes';
+  const forcePathStyle = pathStyleStr.label === t('prompt_pathStyle_yes');
 
   const accessKeyId = await vscode.window.showInputBox({
-    prompt: 'Access Key ID',
-    placeHolder: 'AKIAIOSFODNN7EXAMPLE',
-    validateInput: (v) => (v.trim() ? null : 'Access Key ID is required'),
+    prompt: t('prompt_accessKey'),
+    placeHolder: t('prompt_accessKey_placeholder'),
+    validateInput: (v) => (v.trim() ? null : t('val_accessKeyRequired')),
     ignoreFocusOut: true,
   });
   if (!accessKeyId) return;
 
   const secretAccessKey = await vscode.window.showInputBox({
-    prompt: 'Secret Access Key',
-    placeHolder: 'xxxxxxxxxxxxxxxxxxxxxxxxx',
+    prompt: t('prompt_secretKey'),
+    placeHolder: t('prompt_secretKey_placeholder'),
     password: true,
-    validateInput: (v) => (v.trim() ? null : 'Secret Access Key is required'),
+    validateInput: (v) => (v.trim() ? null : t('val_secretKeyRequired')),
     ignoreFocusOut: true,
   });
   if (!secretAccessKey) return;
@@ -136,23 +133,17 @@ async function addConnection(
   await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
-      title: 'Testing connection...',
+      title: t('msg_testingConnection'),
       cancellable: false,
     },
     async () => {
       const conn = await connectionManager.addConnection({
-        name,
-        endpoint,
-        region,
-        bucket,
-        forcePathStyle,
-        accessKeyId,
-        secretAccessKey,
+        name, endpoint, region, bucket, forcePathStyle, accessKeyId, secretAccessKey,
       });
 
       const secrets = await connectionManager.getCredentials(conn.id);
       if (!secrets) {
-        vscode.window.showErrorMessage('Failed to store credentials');
+        vscode.window.showErrorMessage(t('msg_storeFailed'));
         return;
       }
 
@@ -160,15 +151,15 @@ async function addConnection(
       const result = await testConnection(client, bucket);
 
       if (result.ok) {
-        vscode.window.showInformationMessage(`Connected to "${name}" successfully`);
+        vscode.window.showInformationMessage(t('msg_connected', name));
         treeProvider.refresh();
       } else {
         const action = await vscode.window.showErrorMessage(
-          `Connection failed: ${result.error}`,
-          'Remove Connection',
-          'Keep Anyway'
+          t('msg_connectionFailed', result.error),
+          t('msg_removeConn'),
+          t('msg_keepAnyway')
         );
-        if (action === 'Remove Connection') {
+        if (action === t('msg_removeConn')) {
           await connectionManager.removeConnection(conn.id);
           treeProvider.refresh();
         }
@@ -182,26 +173,20 @@ async function handleUpload(
   item: S3TreeItem
 ): Promise<void> {
   if (!item) {
-    vscode.window.showErrorMessage('Please select a folder or connection first');
+    vscode.window.showErrorMessage(t('msg_selectConnOrFolder'));
     return;
   }
 
   const conn = connectionManager.getConnection(item.connectionId);
-  if (!conn) {
-    vscode.window.showErrorMessage('Connection not found');
-    return;
-  }
+  if (!conn) { vscode.window.showErrorMessage(t('msg_connNotFound')); return; }
 
   const secrets = await connectionManager.getCredentials(item.connectionId);
-  if (!secrets) {
-    vscode.window.showErrorMessage('Credentials not found');
-    return;
-  }
+  if (!secrets) { vscode.window.showErrorMessage(t('msg_credNotFound')); return; }
 
   const fileUris = await vscode.window.showOpenDialog({
     canSelectFiles: true,
     canSelectMany: true,
-    openLabel: 'Upload',
+    openLabel: t('cmd_uploadFile'),
   });
   if (!fileUris || fileUris.length === 0) return;
 
@@ -217,18 +202,18 @@ async function handleUpload(
       await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
-          title: `Uploading ${fileName}...`,
+          title: t('msg_uploading', fileName),
           cancellable: false,
         },
         () => uploadFile(client, conn.bucket, key, filePath)
       );
     } catch (err: any) {
-      vscode.window.showErrorMessage(`Failed to upload ${fileName}: ${err.message}`);
+      vscode.window.showErrorMessage(t('msg_uploadFailed', fileName, err.message));
       return;
     }
   }
 
-  vscode.window.showInformationMessage(`Uploaded ${fileUris.length} file(s) successfully`);
+  vscode.window.showInformationMessage(t('msg_uploaded', fileUris.length));
 }
 
 async function handleDownload(
@@ -237,21 +222,21 @@ async function handleDownload(
 ): Promise<void> {
   const items = getSelectionOrDefault(item, 's3File');
   if (items.length === 0) {
-    vscode.window.showErrorMessage('Please select a file to download');
+    vscode.window.showErrorMessage(t('msg_selectFile'));
     return;
   }
 
   const files = items.filter(i => i.contextValue === 's3File');
   if (files.length === 0) {
-    vscode.window.showErrorMessage('Please select a file to download');
+    vscode.window.showErrorMessage(t('msg_selectFile'));
     return;
   }
 
   const conn = connectionManager.getConnection(files[0].connectionId);
-  if (!conn) { vscode.window.showErrorMessage('Connection not found'); return; }
+  if (!conn) { vscode.window.showErrorMessage(t('msg_connNotFound')); return; }
 
   const secrets = await connectionManager.getCredentials(files[0].connectionId);
-  if (!secrets) { vscode.window.showErrorMessage('Credentials not found'); return; }
+  if (!secrets) { vscode.window.showErrorMessage(t('msg_credNotFound')); return; }
 
   const client = createClient(conn, secrets);
 
@@ -259,17 +244,17 @@ async function handleDownload(
     const fileName = path.basename(files[0].key);
     const uri = await vscode.window.showSaveDialog({
       defaultUri: vscode.Uri.file(fileName),
-      saveLabel: 'Download',
+      saveLabel: t('cmd_downloadFile'),
     });
     if (!uri) return;
     try {
       await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: `Downloading ${fileName}...`, cancellable: false },
+        { location: vscode.ProgressLocation.Notification, title: t('msg_downloading', fileName), cancellable: false },
         () => downloadFile(client, conn.bucket, files[0].key, uri.fsPath)
       );
-      vscode.window.showInformationMessage(`Downloaded ${fileName}`);
+      vscode.window.showInformationMessage(t('msg_downloaded', fileName));
     } catch (err: any) {
-      vscode.window.showErrorMessage(`Download failed: ${err.message}`);
+      vscode.window.showErrorMessage(t('msg_downloadFailed', err.message));
     }
     return;
   }
@@ -277,7 +262,7 @@ async function handleDownload(
   const dirUri = await vscode.window.showOpenDialog({
     canSelectFolders: true,
     canSelectFiles: false,
-    openLabel: 'Download All Here',
+    openLabel: t('cmd_downloadFile'),
   });
   if (!dirUri) return;
   const baseDir = dirUri[0].fsPath;
@@ -286,24 +271,22 @@ async function handleDownload(
   let failCount = 0;
 
   await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: `Downloading ${files.length} files...`, cancellable: false },
+    { location: vscode.ProgressLocation.Notification, title: t('msg_downloadingMany', files.length), cancellable: false },
     async () => {
       for (const f of files) {
         const localPath = path.join(baseDir, path.basename(f.key));
         try {
           await downloadFile(client, conn.bucket, f.key, localPath);
           successCount++;
-        } catch {
-          failCount++;
-        }
+        } catch { failCount++; }
       }
     }
   );
 
   if (failCount === 0) {
-    vscode.window.showInformationMessage(`Downloaded ${successCount} file(s) to ${baseDir}`);
+    vscode.window.showInformationMessage(t('msg_downloadedMany', successCount, baseDir));
   } else {
-    vscode.window.showWarningMessage(`Downloaded ${successCount} file(s), ${failCount} failed`);
+    vscode.window.showWarningMessage(t('msg_downloadedWarn', successCount, failCount));
   }
 }
 
@@ -314,32 +297,32 @@ async function handleDelete(
 ): Promise<void> {
   const items = getSelectionOrDefault(item, 's3File', 's3Folder');
   if (items.length === 0) {
-    vscode.window.showErrorMessage('Please select a file or folder');
+    vscode.window.showErrorMessage(t('msg_selectFileOrFolder'));
     return;
   }
 
   const conn = connectionManager.getConnection(items[0].connectionId);
-  if (!conn) { vscode.window.showErrorMessage('Connection not found'); return; }
+  if (!conn) { vscode.window.showErrorMessage(t('msg_connNotFound')); return; }
 
   const secrets = await connectionManager.getCredentials(items[0].connectionId);
-  if (!secrets) { vscode.window.showErrorMessage('Credentials not found'); return; }
+  if (!secrets) { vscode.window.showErrorMessage(t('msg_credNotFound')); return; }
 
   const client = createClient(conn, secrets);
 
   const confirmMsg = items.length === 1
     ? items[0].isFolder
-      ? `Delete folder "${getLabel(items[0].key, true)}" and ALL its contents?`
-      : `Delete "${getLabel(items[0].key, false)}"?`
-    : `Delete ${items.length} selected item(s)?`;
+      ? t('msg_deleteFolderConfirm', getLabel(items[0].key, true))
+      : t('msg_deleteConfirm', getLabel(items[0].key, false))
+    : t('msg_deleteMultiConfirm', items.length);
 
-  const confirm = await vscode.window.showWarningMessage(confirmMsg, 'Delete', 'Cancel');
-  if (confirm !== 'Delete') return;
+  const confirm = await vscode.window.showWarningMessage(confirmMsg, t('msg_deleteBtn'), t('msg_cancelBtn'));
+  if (confirm !== t('msg_deleteBtn')) return;
 
   let successCount = 0;
   let failCount = 0;
 
   await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: `Deleting ${items.length} item(s)...`, cancellable: false },
+    { location: vscode.ProgressLocation.Notification, title: t('msg_deleting', items.length), cancellable: false },
     async () => {
       for (const target of items) {
         try {
@@ -349,9 +332,7 @@ async function handleDelete(
             await deleteObject(client, conn.bucket, target.key);
           }
           successCount++;
-        } catch {
-          failCount++;
-        }
+        } catch { failCount++; }
       }
     }
   );
@@ -359,9 +340,9 @@ async function handleDelete(
   treeProvider.refresh();
 
   if (failCount === 0) {
-    vscode.window.showInformationMessage(`Deleted ${successCount} item(s) successfully`);
+    vscode.window.showInformationMessage(t('msg_deletedMany', successCount));
   } else {
-    vscode.window.showWarningMessage(`Deleted ${successCount} item(s), ${failCount} failed`);
+    vscode.window.showWarningMessage(t('msg_deletedWarn', successCount, failCount));
   }
 }
 
@@ -377,7 +358,7 @@ async function handlePreviewFile(
   if (!conn || !secrets) return;
 
   if (!isPreviewable(item.key)) {
-    vscode.window.showInformationMessage('Preview not supported for this file type');
+    vscode.window.showInformationMessage(t('msg_notPreviewable'));
     return;
   }
 
@@ -388,7 +369,7 @@ async function handlePreviewFile(
 
   try {
     await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Window, title: 'Opening file...', cancellable: false },
+      { location: vscode.ProgressLocation.Window, title: t('msg_opening'), cancellable: false },
       () => downloadFile(client, conn.bucket, item.key, localPath)
     );
 
@@ -401,7 +382,7 @@ async function handlePreviewFile(
       await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(localPath));
     }
   } catch (err: any) {
-    vscode.window.showErrorMessage(`Failed to open file: ${err.message}`);
+    vscode.window.showErrorMessage(t('msg_openFailed', err.message));
   }
 }
 
@@ -411,47 +392,58 @@ async function handleRename(
   item: S3TreeItem
 ): Promise<void> {
   if (!item || (item.contextValue !== 's3File' && item.contextValue !== 's3Folder')) {
-    vscode.window.showErrorMessage('Please select a file or folder');
+    vscode.window.showErrorMessage(t('msg_selectFileOrFolder'));
     return;
   }
 
   const conn = connectionManager.getConnection(item.connectionId);
   const secrets = await connectionManager.getCredentials(item.connectionId);
-  if (!conn || !secrets) { vscode.window.showErrorMessage('Connection not found'); return; }
+  if (!conn || !secrets) { vscode.window.showErrorMessage(t('msg_connNotFound')); return; }
 
   const client = createClient(conn, secrets);
   const oldName = getLabel(item.key, item.isFolder);
-  const prefix = item.isFolder
-    ? item.key.slice(0, item.key.length - oldName.length)
-    : item.key.slice(0, item.key.length - oldName.length - (item.key.endsWith('/') ? 1 : 0));
-  const prefixPath = item.isFolder ? item.key.slice(0, -oldName.length) : item.key.slice(0, -oldName.length);
+  const prefixPath = item.isFolder
+    ? item.key.slice(0, -oldName.length)
+    : item.key.slice(0, -oldName.length);
+
+  const dotIdx = oldName.lastIndexOf('.');
+  const selectLen = dotIdx > 0 ? dotIdx : oldName.length;
+
+  const validateName = (v: string): string | null => {
+    if (!v.trim()) return t('val_empty');
+    if (v.includes('/')) return t('val_slash');
+    if (/^\.+$/.test(v)) return t('val_dots');
+    if (/[<>:"|?*\\]/.test(v)) return t('val_invalidChars');
+    return null;
+  };
 
   const newName = await vscode.window.showInputBox({
-    prompt: item.isFolder ? 'New folder name' : 'New file name',
+    title: item.isFolder ? t('prompt_rename_folder') : t('prompt_rename_file'),
     value: oldName,
-    validateInput: (v) => (v.trim() ? null : 'Name is required'),
+    valueSelection: [0, selectLen],
+    validateInput: validateName,
     ignoreFocusOut: true,
   });
   if (!newName || newName === oldName) return;
+  if (validateName(newName)) {
+    vscode.window.showWarningMessage(t('msg_renameBad'));
+    return;
+  }
 
   const oldKey = item.key;
   const newKey = item.isFolder ? prefixPath + newName + '/' : prefixPath + newName;
 
   try {
     await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: `Renaming...`, cancellable: false },
+      { location: vscode.ProgressLocation.Notification, title: t('msg_renaming'), cancellable: false },
       async () => {
-        if (item.isFolder) {
-          await renameFolder(client, conn.bucket, oldKey, newKey);
-        } else {
-          await renameObject(client, conn.bucket, oldKey, newKey);
-        }
+        if (item.isFolder) await renameFolder(client, conn.bucket, oldKey, newKey);
+        else await renameObject(client, conn.bucket, oldKey, newKey);
       }
     );
-    vscode.window.showInformationMessage(`Renamed to "${newName}"`);
     treeProvider.refresh();
   } catch (err: any) {
-    vscode.window.showErrorMessage(`Rename failed: ${err.message}`);
+    vscode.window.showErrorMessage(t('msg_renameFailed', err.message));
   }
 }
 
@@ -461,21 +453,21 @@ async function handleNewFolder(
   item: S3TreeItem
 ): Promise<void> {
   if (!item || (item.contextValue !== 's3Connection' && item.contextValue !== 's3Folder')) {
-    vscode.window.showErrorMessage('Please select a connection or folder');
+    vscode.window.showErrorMessage(t('msg_selectConnOrFolder'));
     return;
   }
 
   const conn = connectionManager.getConnection(item.connectionId);
   const secrets = await connectionManager.getCredentials(item.connectionId);
-  if (!conn || !secrets) { vscode.window.showErrorMessage('Connection not found'); return; }
+  if (!conn || !secrets) { vscode.window.showErrorMessage(t('msg_connNotFound')); return; }
 
   const client = createClient(conn, secrets);
   const parentPrefix = item.contextValue === 's3Folder' ? item.key : '';
 
   const folderName = await vscode.window.showInputBox({
-    prompt: 'New folder name',
-    placeHolder: 'my-folder',
-    validateInput: (v) => (v.trim() ? null : 'Folder name is required'),
+    prompt: t('prompt_newFolderName'),
+    placeHolder: t('prompt_newFolder_placeholder'),
+    validateInput: (v) => (v.trim() ? null : t('val_nameRequired')),
     ignoreFocusOut: true,
   });
   if (!folderName) return;
@@ -484,20 +476,20 @@ async function handleNewFolder(
 
   try {
     await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: 'Creating folder...', cancellable: false },
+      { location: vscode.ProgressLocation.Notification, title: t('msg_creatingFolder'), cancellable: false },
       () => createFolder(client, conn.bucket, fullKey)
     );
-    vscode.window.showInformationMessage(`Created folder "${folderName}"`);
+    vscode.window.showInformationMessage(t('msg_folderCreated', folderName));
     treeProvider.refresh();
   } catch (err: any) {
-    vscode.window.showErrorMessage(`Create folder failed: ${err.message}`);
+    vscode.window.showErrorMessage(t('msg_folderFailed', err.message));
   }
 }
 
 function handleCopyPath(item: S3TreeItem): void {
   if (!item) return;
   vscode.env.clipboard.writeText(item.key);
-  vscode.window.setStatusBarMessage('$(link) Path copied', 2000);
+  vscode.window.setStatusBarMessage(`$(link) ${t('msg_pathCopied')}`, 2000);
 }
 
 async function handleEditConnection(
@@ -506,105 +498,95 @@ async function handleEditConnection(
   item: S3TreeItem
 ): Promise<void> {
   if (!item || item.contextValue !== 's3Connection') {
-    vscode.window.showErrorMessage('Please select a connection');
+    vscode.window.showErrorMessage(t('msg_selectFileOrFolder'));
     return;
   }
 
   const conn = connectionManager.getConnection(item.connectionId);
-  if (!conn) {
-    vscode.window.showErrorMessage('Connection not found');
-    return;
-  }
+  if (!conn) { vscode.window.showErrorMessage(t('msg_connNotFound')); return; }
 
   const currentSecrets = await connectionManager.getCredentials(item.connectionId);
 
   const name = await vscode.window.showInputBox({
-    prompt: 'Connection name',
+    prompt: t('prompt_edit_connectionName'),
     value: conn.name,
-    validateInput: (v) => (v.trim() ? null : 'Name is required'),
+    validateInput: (v) => (v.trim() ? null : t('val_nameRequired')),
     ignoreFocusOut: true,
   });
   if (!name) return;
 
   const endpoint = await vscode.window.showInputBox({
-    prompt: 'S3 Endpoint URL',
+    prompt: t('prompt_edit_endpoint'),
     value: conn.endpoint,
     validateInput: (v) => {
-      if (!v.trim()) return 'Endpoint is required';
+      if (!v.trim()) return t('val_endpointRequired');
       try { new URL(v); return null; }
-      catch { return 'Invalid URL'; }
+      catch { return t('val_invalidUrl'); }
     },
     ignoreFocusOut: true,
   });
   if (!endpoint) return;
 
   const region = await vscode.window.showInputBox({
-    prompt: 'Region',
+    prompt: t('prompt_edit_region'),
     value: conn.region,
     ignoreFocusOut: true,
   });
   if (!region) return;
 
   const bucket = await vscode.window.showInputBox({
-    prompt: 'Bucket name',
+    prompt: t('prompt_edit_bucket'),
     value: conn.bucket,
-    validateInput: (v) => (v.trim() ? null : 'Bucket name is required'),
+    validateInput: (v) => (v.trim() ? null : t('val_bucketRequired')),
     ignoreFocusOut: true,
   });
   if (!bucket) return;
 
   const pathStyleStr = await vscode.window.showQuickPick(
     [
-      { label: 'Yes', description: 'Path-style (e.g., http://host/bucket/key)' },
-      { label: 'No', description: 'Virtual-hosted-style (e.g., http://bucket.host/key)' },
+      { label: t('prompt_pathStyle_yes'), description: t('prompt_pathStyle_yes_desc') },
+      { label: t('prompt_pathStyle_no'), description: t('prompt_pathStyle_no_desc') },
     ],
-    {
-      placeHolder: 'Use path-style endpoint?',
-      ignoreFocusOut: true,
-    }
+    { placeHolder: t('prompt_pathStyle'), ignoreFocusOut: true }
   );
   if (!pathStyleStr) return;
-  const forcePathStyle = pathStyleStr.label === 'Yes';
+  const forcePathStyle = pathStyleStr.label === t('prompt_pathStyle_yes');
 
   const accessKeyId = await vscode.window.showInputBox({
-    prompt: 'Access Key ID (leave blank to keep current)',
+    prompt: t('prompt_edit_ak'),
     value: currentSecrets?.accessKeyId || '',
     ignoreFocusOut: true,
   });
   if (accessKeyId === undefined) return;
 
   const secretAccessKey = await vscode.window.showInputBox({
-    prompt: 'Secret Access Key (leave blank to keep current)',
+    prompt: t('prompt_edit_sk'),
     password: true,
-    placeHolder: currentSecrets ? '(unchanged if left blank)' : 'Required',
+    placeHolder: currentSecrets ? t('prompt_edit_sk_unchanged') : t('prompt_edit_sk_required'),
     ignoreFocusOut: true,
   });
   if (secretAccessKey === undefined) return;
 
   await connectionManager.updateConnection(item.connectionId, {
-    name,
-    endpoint,
-    region,
-    bucket,
-    forcePathStyle,
+    name, endpoint, region, bucket, forcePathStyle,
     accessKeyId: accessKeyId || undefined,
     secretAccessKey: secretAccessKey || undefined,
   });
 
   const skipTest = await vscode.window.showQuickPick(
-    ['Test Connection', 'Skip'],
-    { placeHolder: 'Connection updated. Test it now?', ignoreFocusOut: true }
+    [t('prompt_testConnection'), t('prompt_skip')],
+    { placeHolder: t('prompt_testOrSkip'), ignoreFocusOut: true }
   );
-  if (skipTest === 'Test Connection') {
+  if (skipTest === t('prompt_testConnection')) {
     const updatedConn = connectionManager.getConnection(item.connectionId);
     const secrets = await connectionManager.getCredentials(item.connectionId);
     if (updatedConn && secrets) {
       const client = createClient(updatedConn, secrets);
       const result = await testConnection(client, updatedConn.bucket);
       if (result.ok) {
-        vscode.window.showInformationMessage(`Connection "${name}" verified successfully`);
+        vscode.window.showInformationMessage(t('msg_verified', name));
       } else {
-        vscode.window.showWarningMessage(`Connection test failed: ${result.error}`);
+        vscode.window.showWarningMessage(t('msg_verifyWarn', result.error));
       }
     }
   }
@@ -618,25 +600,22 @@ async function handleDeleteConnection(
   item: S3TreeItem
 ): Promise<void> {
   if (!item || item.contextValue !== 's3Connection') {
-    vscode.window.showErrorMessage('Please select a connection');
+    vscode.window.showErrorMessage(t('msg_selectFileOrFolder'));
     return;
   }
 
   const conn = connectionManager.getConnection(item.connectionId);
-  if (!conn) {
-    vscode.window.showErrorMessage('Connection not found');
-    return;
-  }
+  if (!conn) { vscode.window.showErrorMessage(t('msg_connNotFound')); return; }
 
   const confirm = await vscode.window.showWarningMessage(
-    `Remove connection "${conn.name}"?`,
-    'Remove',
-    'Cancel'
+    t('msg_removeConfirm', conn.name),
+    t('msg_removeBtn'),
+    t('msg_cancelBtn')
   );
-  if (confirm !== 'Remove') return;
+  if (confirm !== t('msg_removeBtn')) return;
 
   await connectionManager.removeConnection(item.connectionId);
-  vscode.window.showInformationMessage(`Removed connection "${conn.name}"`);
+  vscode.window.showInformationMessage(t('msg_removedConn', conn.name));
   treeProvider.refresh();
 }
 

@@ -1,11 +1,11 @@
 {
   "name": "vscode-s3",
-  "displayName": "S3 Client / S3浏览器",
-  "description": "Browse and manage S3-compatible object storage",
+  "displayName": "%displayName%",
+  "description": "%description%",
   "version": "1.0.0",
   "publisher": "vscode-s3",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.89.0"
   },
   "categories": [
     "Other"
@@ -30,7 +30,7 @@
       "activitybar": [
         {
           "id": "s3-browser",
-          "title": "S3客户端",
+          "title": "%viewContainerTitle%",
           "icon": "resources/icon.svg"
         }
       ]
@@ -39,64 +39,64 @@
       "s3-browser": [
         {
           "id": "s3Explorer",
-          "name": "S3 Explorer"
+          "name": "%viewName%"
         }
       ]
     },
     "commands": [
       {
         "command": "s3.addConnection",
-        "title": "Add S3 Connection...",
+        "title": "%cmd.addConnection%",
         "icon": "$(plus)"
       },
       {
         "command": "s3.refresh",
-        "title": "Refresh",
+        "title": "%cmd.refresh%",
         "icon": "$(refresh)"
       },
       {
         "command": "s3.uploadFile",
-        "title": "Upload File...",
+        "title": "%cmd.uploadFile%",
         "icon": "$(cloud-upload)"
       },
       {
         "command": "s3.downloadFile",
-        "title": "Download...",
+        "title": "%cmd.downloadFile%",
         "icon": "$(cloud-download)"
       },
       {
         "command": "s3.deleteObject",
-        "title": "Delete",
+        "title": "%cmd.delete%",
         "icon": "$(trash)"
       },
       {
         "command": "s3.editConnection",
-        "title": "Edit Connection...",
+        "title": "%cmd.editConnection%",
         "icon": "$(edit)"
       },
       {
         "command": "s3.deleteConnection",
-        "title": "Remove Connection",
+        "title": "%cmd.removeConnection%",
         "icon": "$(close)"
       },
       {
         "command": "s3.copyPath",
-        "title": "Copy Path",
+        "title": "%cmd.copyPath%",
         "icon": "$(link)"
       },
       {
         "command": "s3.previewFile",
-        "title": "Preview File",
-        "icon": "$(preview)"
+        "title": "%cmd.previewFile%",
+        "icon": "$(eye)"
       },
       {
         "command": "s3.rename",
-        "title": "Rename...",
+        "title": "%cmd.rename%",
         "icon": "$(symbol-misc)"
       },
       {
         "command": "s3.newFolder",
-        "title": "New Folder...",
+        "title": "%cmd.newFolder%",
         "icon": "$(new-folder)"
       }
     ],
@@ -124,6 +124,11 @@
         },
         {
           "command": "s3.downloadFile",
+          "when": "view == s3Explorer && viewItem == s3File",
+          "group": "inline"
+        },
+        {
+          "command": "s3.previewFile",
           "when": "view == s3Explorer && viewItem == s3File",
           "group": "inline"
         },
@@ -173,7 +178,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "@types/vscode": "^1.85.0",
+    "@types/vscode": "^1.89.0",
     "esbuild": "^0.20.0",
     "typescript": "^5.4.0"
   },

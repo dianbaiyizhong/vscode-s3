@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
-import { ConnectionManager, S3Connection } from './connectionManager';
+import { ConnectionManager } from './connectionManager';
 import { createClient, listObjects, S3ObjectInfo } from './s3Client';
 import { isTextFile, isImageFile, isVideoFile } from './previewManager';
+import { t } from './i18n';
 
 function getLabel(key: string, isFolder: boolean): string {
   const normalized = key.replace(/\/$/, '');
@@ -47,7 +48,7 @@ export class S3TreeItem extends vscode.TreeItem {
 
     if (connectionName && bucketName && key === '') {
       this.contextValue = 's3Connection';
-      this.tooltip = `${connectionName}\nBucket: ${bucketName}\nEndpoint: ${this.getEndpoint()}`;
+      this.tooltip = t('tree_connTooltip', connectionName, bucketName, this.getEndpoint());
       this.description = bucketName;
     } else if (isFolder) {
       this.contextValue = 's3Folder';
@@ -56,7 +57,7 @@ export class S3TreeItem extends vscode.TreeItem {
       this.iconPath = vscode.ThemeIcon.Folder;
     } else {
       this.contextValue = 's3File';
-      this.tooltip = `${key}\nSize: ${formatSize(size)}\nModified: ${formatDate(lastModified)}`;
+      this.tooltip = t('tree_fileTooltip', key, formatSize(size), formatDate(lastModified));
       this.description = `${formatSize(size)}`;
 
       if (isImageFile(key) || isVideoFile(key)) {
@@ -67,11 +68,7 @@ export class S3TreeItem extends vscode.TreeItem {
         this.iconPath = vscode.ThemeIcon.File;
       }
 
-      this.command = {
-        command: 's3.previewFile',
-        title: 'Preview',
-        arguments: [this],
-      };
+
     }
   }
 

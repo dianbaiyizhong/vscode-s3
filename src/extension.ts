@@ -2,12 +2,15 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { ConnectionManager } from './connectionManager';
-import { createClient, uploadFile, listObjects } from './s3Client';
+import { createClient, uploadFile } from './s3Client';
 import { S3ExplorerProvider, S3TreeItem } from './treeView';
 import { registerCommands } from './commands';
 import { PreviewManager } from './previewManager';
+import { initI18n, t } from './i18n';
 
 export function activate(context: vscode.ExtensionContext): void {
+  initI18n();
+
   const connectionManager = new ConnectionManager(context);
   const treeProvider = new S3ExplorerProvider(connectionManager);
   const previewManager = new PreviewManager();
@@ -59,13 +62,12 @@ export function activate(context: vscode.ExtensionContext): void {
 
         if (uploaded.length > 0 || failCount > 0) {
           treeProvider.refresh();
-          const msg = uploaded.length > 0
-            ? `Uploaded ${uploaded.length} file(s) by drag & drop`
-            : `Drag & drop upload failed`;
-          if (failCount > 0) {
-            vscode.window.showWarningMessage(`${msg}, ${failCount} failed`);
+          if (uploaded.length > 0 && failCount === 0) {
+            vscode.window.showInformationMessage(t('msg_dropUploaded', uploaded.length));
+          } else if (uploaded.length === 0) {
+            vscode.window.showErrorMessage(t('msg_dropFailed'));
           } else {
-            vscode.window.showInformationMessage(msg);
+            vscode.window.showWarningMessage(t('msg_dropWarn', t('msg_dropUploaded', uploaded.length), failCount));
           }
         }
       },
@@ -97,9 +99,9 @@ export function activate(context: vscode.ExtensionContext): void {
             Body: content,
           })
         );
-        vscode.window.setStatusBarMessage(`$(cloud-upload) Synced: ${mapping.key}`, 3000);
+        vscode.window.setStatusBarMessage(`$(cloud-upload) ${t('msg_synced', mapping.key)}`, 3000);
       } catch (err: any) {
-        vscode.window.showWarningMessage(`Sync failed: ${err.message}`);
+        vscode.window.showWarningMessage(t('msg_syncFailed', err.message));
       }
     })
   );
