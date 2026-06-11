@@ -1,8 +1,8 @@
 {
   "displayName": "S3 Browser",
   "description": "Browse and manage S3-compatible object storage",
-  "viewContainerTitle": "S3 Browser",
-  "viewName": "S3 Explorer",
+  "viewContainerTitle": "S3",
+  "viewName": "S3",
   "cmd.addConnection": "Add S3 Connection...",
   "cmd.refresh": "Refresh",
   "cmd.uploadFile": "Upload File...",

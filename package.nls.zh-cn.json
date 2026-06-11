@@ -1,8 +1,8 @@
 {
   "displayName": "S3 浏览器",
   "description": "在 VS Code 中浏览和管理任意 S3 兼容的对象存储",
-  "viewContainerTitle": "S3 浏览器",
-  "viewName": "S3 资源管理器",
+  "viewContainerTitle": "S3",
+  "viewName": "S3 浏览器",
   "cmd.addConnection": "添加 S3 连接...",
   "cmd.refresh": "刷新",
   "cmd.uploadFile": "上传文件...",
