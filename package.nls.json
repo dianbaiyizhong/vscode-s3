@@ -15,5 +15,6 @@
   "cmd.rename": "Rename...",
   "cmd.newFolder": "New Folder...",
   "cmd.filterFiles": "Filter files...",
-  "cmd.clearFilter": "Clear Filter"
+  "cmd.clearFilter": "Clear Filter",
+  "cmd.goToPath": "Go to Path..."
 }

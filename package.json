@@ -25,7 +25,8 @@
     "onCommand:s3.rename",
     "onCommand:s3.newFolder",
     "onCommand:s3.filterFiles",
-    "onCommand:s3.clearFilter"
+    "onCommand:s3.clearFilter",
+    "onCommand:s3.goToPath"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -111,6 +112,11 @@
         "command": "s3.clearFilter",
         "title": "%cmd.clearFilter%",
         "icon": "$(close)"
+      },
+      {
+        "command": "s3.goToPath",
+        "title": "%cmd.goToPath%",
+        "icon": "$(arrow-right)"
       }
     ],
     "menus": {
@@ -168,6 +174,11 @@
         {
           "command": "s3.editConnection",
           "when": "view == s3Explorer && viewItem == s3Connection",
+          "group": "inline"
+        },
+        {
+          "command": "s3.goToPath",
+          "when": "view == s3Explorer && (viewItem == s3Connection || viewItem == s3Folder)",
           "group": "inline"
         },
         {

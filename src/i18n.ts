@@ -50,6 +50,8 @@ const en: Record<string, string> = {
   prompt_newFolder_placeholder: 'my-folder',
   prompt_filterFiles: 'Filter files by name',
   prompt_filterFiles_placeholder: 'Type to filter...',
+  prompt_goToPath: 'Go to path',
+  prompt_goToPath_placeholder: 'folder/subfolder/file.txt',
   prompt_rename_file: 'Rename file',
   prompt_rename_folder: 'Rename folder',
 
@@ -114,6 +116,7 @@ const en: Record<string, string> = {
   msg_syncFailed: 'Sync failed: {0}',
   msg_filterActive: 'Filter active',
   msg_filterCleared: 'Filter cleared',
+  msg_navigating: 'Navigating...',
   msg_pathCopied: 'Path copied',
   msg_verified: 'Connection "{0}" verified successfully',
   msg_verifyWarn: 'Connection test failed: {0}',
@@ -173,6 +176,8 @@ const zh: Record<string, string> = {
   prompt_rename_file: '重命名文件',
   prompt_filterFiles: '按名称过滤文件',
   prompt_filterFiles_placeholder: '输入过滤条件...',
+  prompt_goToPath: '跳转到路径',
+  prompt_goToPath_placeholder: '文件夹/子文件夹/文件.txt',
   prompt_rename_folder: '重命名文件夹',
 
   val_nameRequired: '名称不能为空',
@@ -234,6 +239,7 @@ const zh: Record<string, string> = {
   msg_syncFailed: '同步失败：{0}',
   msg_filterActive: '过滤已启用',
   msg_filterCleared: '过滤已清除',
+  msg_navigating: '正在导航...',
   msg_pathCopied: '路径已复制',
   msg_verified: '连接 "{0}" 验证成功',
   msg_verifyWarn: '连接测试失败：{0}',

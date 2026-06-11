@@ -51,6 +51,9 @@ export function registerCommands(
     ),
     vscode.commands.registerCommand('s3.clearFilter', () =>
       handleClearFilter(treeProvider)
+    ),
+    vscode.commands.registerCommand('s3.goToPath', (item: S3TreeItem) =>
+      handleGoToPath(connectionManager, treeProvider, item)
     )
   );
 }
@@ -655,6 +658,53 @@ async function handleFilterFiles(
 function handleClearFilter(treeProvider: S3ExplorerProvider): void {
   treeProvider.clearAllFilters();
   vscode.window.setStatusBarMessage(`$(filter) ${t('msg_filterCleared')}`, 2000);
+}
+
+async function handleGoToPath(
+  connectionManager: ConnectionManager,
+  treeProvider: S3ExplorerProvider,
+  item: S3TreeItem
+): Promise<void> {
+  if (!item || (item.contextValue !== 's3Connection' && item.contextValue !== 's3Folder')) return;
+
+  const prefix = item.isFolder ? item.key : '';
+  const path = await vscode.window.showInputBox({
+    title: t('prompt_goToPath'),
+    placeHolder: t('prompt_goToPath_placeholder'),
+    value: prefix,
+    ignoreFocusOut: true,
+  });
+  if (!path) return;
+
+  const connId = item.connectionId;
+  const normalized = path.replace(/\/$/, '');
+  const segments = normalized.split('/');
+  const view = S3ExplorerProvider.treeView;
+  if (!view) return;
+
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Window, title: t('msg_navigating'), cancellable: false },
+    async () => {
+      let currentKey = '';
+      for (let i = 0; i < segments.length; i++) {
+        const isLast = i === segments.length - 1;
+        const isFile = isLast && !path.endsWith('/');
+        const segKey = currentKey ? currentKey + segments[i] + (isFile ? '' : '/') : segments[i] + (isFile ? '' : '/');
+        const itemKey = isFile ? segKey.replace(/\/$/, '') : segKey;
+
+        const target = new S3TreeItem(
+          connId,
+          itemKey,
+          !isFile,
+          segments[i],
+          !isFile ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None
+        );
+
+        await view.reveal(target, { select: isLast, focus: isLast, expand: !isLast });
+        currentKey = segKey;
+      }
+    }
+  );
 }
 
 function getLabel(key: string, isFolder: boolean): string {

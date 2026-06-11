@@ -46,6 +46,8 @@ export class S3TreeItem extends vscode.TreeItem {
   ) {
     super(label, collapsibleState);
 
+    this.id = `${connectionId}|${key}`;
+
     if (connectionName && bucketName && key === '') {
       this.contextValue = 's3Connection';
       this.tooltip = t('tree_connTooltip', connectionName, bucketName, this.getEndpoint());
@@ -97,6 +99,39 @@ export class S3ExplorerProvider implements vscode.TreeDataProvider<S3TreeItem> {
 
   getTreeItem(element: S3TreeItem): vscode.TreeItem {
     return element;
+  }
+
+  getParent(element: S3TreeItem): vscode.ProviderResult<S3TreeItem> {
+    if (element.key === '') return undefined;
+
+    const normalized = element.key.replace(/\/$/, '');
+    const lastSlash = normalized.lastIndexOf('/');
+
+    let parentKey: string;
+    let isRoot = false;
+
+    if (lastSlash === -1) {
+      parentKey = '';
+      isRoot = true;
+    } else {
+      parentKey = normalized.substring(0, lastSlash + 1);
+    }
+
+    if (isRoot) {
+      const conn = this.connectionManager.getConnection(element.connectionId);
+      if (!conn) return undefined;
+      return new S3TreeItem(
+        element.connectionId, '', true, conn.name,
+        vscode.TreeItemCollapsibleState.Collapsed,
+        undefined, undefined, conn.name, conn.bucket
+      );
+    }
+
+    return new S3TreeItem(
+      element.connectionId, parentKey, true,
+      getLabel(parentKey, true),
+      vscode.TreeItemCollapsibleState.Collapsed
+    );
   }
 
   getFilterKey(element: S3TreeItem): string | undefined {
