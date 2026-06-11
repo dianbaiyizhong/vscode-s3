@@ -23,7 +23,9 @@
     "onCommand:s3.copyPath",
     "onCommand:s3.previewFile",
     "onCommand:s3.rename",
-    "onCommand:s3.newFolder"
+    "onCommand:s3.newFolder",
+    "onCommand:s3.filterFiles",
+    "onCommand:s3.clearFilter"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -99,6 +101,16 @@
         "command": "s3.newFolder",
         "title": "%cmd.newFolder%",
         "icon": "$(new-folder)"
+      },
+      {
+        "command": "s3.filterFiles",
+        "title": "%cmd.filterFiles%",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "s3.clearFilter",
+        "title": "%cmd.clearFilter%",
+        "icon": "$(close)"
       }
     ],
     "menus": {
@@ -110,9 +122,19 @@
         {
           "command": "s3.refresh",
           "group": "navigation"
+        },
+        {
+          "command": "s3.clearFilter",
+          "when": "view == s3Explorer && s3:filterActive",
+          "group": "navigation"
         }
       ],
       "view/item/context": [
+        {
+          "command": "s3.filterFiles",
+          "when": "view == s3Explorer && (viewItem == s3Connection || viewItem == s3Folder)",
+          "group": "inline"
+        },
         {
           "command": "s3.uploadFile",
           "when": "view == s3Explorer && viewItem == s3Connection",

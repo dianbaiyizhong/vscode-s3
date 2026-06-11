@@ -45,6 +45,12 @@ export function registerCommands(
     ),
     vscode.commands.registerCommand('s3.newFolder', (item: S3TreeItem) =>
       handleNewFolder(connectionManager, treeProvider, item)
+    ),
+    vscode.commands.registerCommand('s3.filterFiles', (item: S3TreeItem) =>
+      handleFilterFiles(treeProvider, item)
+    ),
+    vscode.commands.registerCommand('s3.clearFilter', () =>
+      handleClearFilter(treeProvider)
     )
   );
 }
@@ -617,6 +623,38 @@ async function handleDeleteConnection(
   await connectionManager.removeConnection(item.connectionId);
   vscode.window.showInformationMessage(t('msg_removedConn', conn.name));
   treeProvider.refresh();
+}
+
+async function handleFilterFiles(
+  treeProvider: S3ExplorerProvider,
+  item: S3TreeItem
+): Promise<void> {
+  if (!item || (item.contextValue !== 's3Connection' && item.contextValue !== 's3Folder')) return;
+
+  const filterKey = treeProvider.getFilterKey(item);
+  const currentFilter = filterKey ? treeProvider.getFilter(filterKey) : '';
+
+  const pattern = await vscode.window.showInputBox({
+    prompt: t('prompt_filterFiles'),
+    placeHolder: t('prompt_filterFiles_placeholder'),
+    value: currentFilter || '',
+    ignoreFocusOut: true,
+  });
+
+  if (pattern === undefined) return;
+
+  if (pattern === '') {
+    treeProvider.clearFilter(item);
+    vscode.window.setStatusBarMessage(`$(filter) ${t('msg_filterCleared')}`, 2000);
+  } else {
+    treeProvider.setFilter(item, pattern);
+    vscode.window.setStatusBarMessage(`$(filter) ${t('msg_filterActive')}`, 2000);
+  }
+}
+
+function handleClearFilter(treeProvider: S3ExplorerProvider): void {
+  treeProvider.clearAllFilters();
+  vscode.window.setStatusBarMessage(`$(filter) ${t('msg_filterCleared')}`, 2000);
 }
 
 function getLabel(key: string, isFolder: boolean): string {

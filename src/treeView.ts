@@ -84,6 +84,7 @@ export class S3ExplorerProvider implements vscode.TreeDataProvider<S3TreeItem> {
 
   private _onDidChangeTreeData = new vscode.EventEmitter<S3TreeItem | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+  private filters = new Map<string, string>();
 
   constructor(private connectionManager: ConnectionManager) {
     S3ExplorerProvider.connectionManager = connectionManager;
@@ -98,13 +99,61 @@ export class S3ExplorerProvider implements vscode.TreeDataProvider<S3TreeItem> {
     return element;
   }
 
+  getFilterKey(element: S3TreeItem): string | undefined {
+    if (element.contextValue === 's3Connection') return `conn:${element.connectionId}`;
+    if (element.contextValue === 's3Folder') return `folder:${element.connectionId}|${element.key}`;
+    return undefined;
+  }
+
+  getFilter(key: string): string | undefined {
+    return this.filters.get(key);
+  }
+
+  setFilter(element: S3TreeItem, pattern: string): void {
+    const key = this.getFilterKey(element);
+    if (!key) return;
+    this.filters.set(key, pattern);
+    vscode.commands.executeCommand('setContext', 's3:filterActive', true);
+    this.refresh(element);
+  }
+
+  clearFilter(element: S3TreeItem): void {
+    const key = this.getFilterKey(element);
+    if (!key) return;
+    this.filters.delete(key);
+    vscode.commands.executeCommand('setContext', 's3:filterActive', this.filters.size > 0);
+    this.refresh(element);
+  }
+
+  clearAllFilters(): void {
+    this.filters.clear();
+    vscode.commands.executeCommand('setContext', 's3:filterActive', false);
+    this.refresh();
+  }
+
   async getChildren(element?: S3TreeItem): Promise<S3TreeItem[]> {
     if (!element) {
       return this.getConnectionItems();
     }
 
-    if (element.contextValue === 's3Connection' || element.contextValue === 's3Folder') {
-      return this.getObjectItems(element.connectionId, element.isFolder ? element.key : '');
+    if (element.contextValue === 's3Connection') {
+      const items = await this.getObjectItems(element.connectionId, '');
+      const filter = this.filters.get(`conn:${element.connectionId}`);
+      if (filter) {
+        const lower = filter.toLowerCase();
+        return items.filter(item => item.label.toLowerCase().includes(lower));
+      }
+      return items;
+    }
+
+    if (element.contextValue === 's3Folder') {
+      const items = await this.getObjectItems(element.connectionId, element.key);
+      const filter = this.filters.get(`folder:${element.connectionId}|${element.key}`);
+      if (filter) {
+        const lower = filter.toLowerCase();
+        return items.filter(item => item.label.toLowerCase().includes(lower));
+      }
+      return items;
     }
 
     return [];

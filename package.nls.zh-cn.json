@@ -13,5 +13,7 @@
   "cmd.copyPath": "复制路径",
   "cmd.previewFile": "预览文件",
   "cmd.rename": "重命名...",
-  "cmd.newFolder": "新建文件夹..."
+  "cmd.newFolder": "新建文件夹...",
+  "cmd.filterFiles": "过滤文件...",
+  "cmd.clearFilter": "清除过滤"
 }

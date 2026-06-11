@@ -13,6 +13,8 @@ const en: Record<string, string> = {
   cmd_previewFile: 'Preview File',
   cmd_rename: 'Rename...',
   cmd_newFolder: 'New Folder...',
+  cmd_filterFiles: 'Filter files...',
+  cmd_clearFilter: 'Clear Filter',
 
   // prompts
   prompt_connectionName: 'Connection name (e.g., My MinIO)',
@@ -46,6 +48,8 @@ const en: Record<string, string> = {
   prompt_newFileName: 'New file name',
   prompt_newFolderName: 'New folder name',
   prompt_newFolder_placeholder: 'my-folder',
+  prompt_filterFiles: 'Filter files by name',
+  prompt_filterFiles_placeholder: 'Type to filter...',
   prompt_rename_file: 'Rename file',
   prompt_rename_folder: 'Rename folder',
 
@@ -108,6 +112,8 @@ const en: Record<string, string> = {
   msg_dropWarn: '{0}, {1} failed',
   msg_synced: 'Synced: {0}',
   msg_syncFailed: 'Sync failed: {0}',
+  msg_filterActive: 'Filter active',
+  msg_filterCleared: 'Filter cleared',
   msg_pathCopied: 'Path copied',
   msg_verified: 'Connection "{0}" verified successfully',
   msg_verifyWarn: 'Connection test failed: {0}',
@@ -130,6 +136,8 @@ const zh: Record<string, string> = {
   cmd_previewFile: '预览文件',
   cmd_rename: '重命名...',
   cmd_newFolder: '新建文件夹...',
+  cmd_filterFiles: '过滤文件...',
+  cmd_clearFilter: '清除过滤',
 
   prompt_connectionName: '连接名称（例如：我的 MinIO）',
   prompt_connectionName_placeholder: '我的 S3 存储',
@@ -163,6 +171,8 @@ const zh: Record<string, string> = {
   prompt_newFolderName: '新文件夹名称',
   prompt_newFolder_placeholder: 'my-folder',
   prompt_rename_file: '重命名文件',
+  prompt_filterFiles: '按名称过滤文件',
+  prompt_filterFiles_placeholder: '输入过滤条件...',
   prompt_rename_folder: '重命名文件夹',
 
   val_nameRequired: '名称不能为空',
@@ -222,6 +232,8 @@ const zh: Record<string, string> = {
   msg_dropWarn: '{0}，{1} 个失败',
   msg_synced: '已同步：{0}',
   msg_syncFailed: '同步失败：{0}',
+  msg_filterActive: '过滤已启用',
+  msg_filterCleared: '过滤已清除',
   msg_pathCopied: '路径已复制',
   msg_verified: '连接 "{0}" 验证成功',
   msg_verifyWarn: '连接测试失败：{0}',

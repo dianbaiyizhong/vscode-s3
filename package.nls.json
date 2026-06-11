@@ -13,5 +13,7 @@
   "cmd.copyPath": "Copy Path",
   "cmd.previewFile": "Preview File",
   "cmd.rename": "Rename...",
-  "cmd.newFolder": "New Folder..."
+  "cmd.newFolder": "New Folder...",
+  "cmd.filterFiles": "Filter files...",
+  "cmd.clearFilter": "Clear Filter"
 }
