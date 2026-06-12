@@ -52,6 +52,7 @@ const en: Record<string, string> = {
   prompt_filterFiles_placeholder: 'Type to filter...',
   prompt_goToPath: 'Go to path',
   prompt_goToPath_placeholder: 'folder/subfolder/file.txt',
+  prompt_objectInfo: 'Object Info (click to copy value)',
   prompt_rename_file: 'Rename file',
   prompt_rename_folder: 'Rename folder',
 
@@ -117,6 +118,8 @@ const en: Record<string, string> = {
   msg_filterActive: 'Filter active',
   msg_filterCleared: 'Filter cleared',
   msg_navigating: 'Navigating...',
+  msg_infoFailed: 'Failed to get object info: {0}',
+  msg_copied: 'Copied to clipboard',
   msg_pathCopied: 'Path copied',
   msg_verified: 'Connection "{0}" verified successfully',
   msg_verifyWarn: 'Connection test failed: {0}',
@@ -178,6 +181,7 @@ const zh: Record<string, string> = {
   prompt_filterFiles_placeholder: '输入过滤条件...',
   prompt_goToPath: '跳转到路径',
   prompt_goToPath_placeholder: '文件夹/子文件夹/文件.txt',
+  prompt_objectInfo: '对象信息（点击复制值）',
   prompt_rename_folder: '重命名文件夹',
 
   val_nameRequired: '名称不能为空',
@@ -239,6 +243,8 @@ const zh: Record<string, string> = {
   msg_syncFailed: '同步失败：{0}',
   msg_filterActive: '过滤已启用',
   msg_filterCleared: '过滤已清除',
+  msg_infoFailed: '获取对象信息失败：{0}',
+  msg_copied: '已复制到剪贴板',
   msg_navigating: '正在导航...',
   msg_pathCopied: '路径已复制',
   msg_verified: '连接 "{0}" 验证成功',

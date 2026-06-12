@@ -16,5 +16,6 @@
   "cmd.newFolder": "新建文件夹...",
   "cmd.filterFiles": "过滤文件...",
   "cmd.clearFilter": "清除过滤",
-  "cmd.goToPath": "跳转到路径..."
+  "cmd.goToPath": "跳转到路径...",
+  "cmd.getInfo": "详细信息"
 }

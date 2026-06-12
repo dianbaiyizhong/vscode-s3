@@ -16,5 +16,6 @@
   "cmd.newFolder": "New Folder...",
   "cmd.filterFiles": "Filter files...",
   "cmd.clearFilter": "Clear Filter",
-  "cmd.goToPath": "Go to Path..."
+  "cmd.goToPath": "Go to Path...",
+  "cmd.getInfo": "Get Info"
 }

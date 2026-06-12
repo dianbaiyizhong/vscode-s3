@@ -26,7 +26,8 @@
     "onCommand:s3.newFolder",
     "onCommand:s3.filterFiles",
     "onCommand:s3.clearFilter",
-    "onCommand:s3.goToPath"
+    "onCommand:s3.goToPath",
+    "onCommand:s3.getInfo"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -117,6 +118,11 @@
         "command": "s3.goToPath",
         "title": "%cmd.goToPath%",
         "icon": "$(arrow-right)"
+      },
+      {
+        "command": "s3.getInfo",
+        "title": "%cmd.getInfo%",
+        "icon": "$(info)"
       }
     ],
     "menus": {
@@ -158,6 +164,11 @@
         },
         {
           "command": "s3.previewFile",
+          "when": "view == s3Explorer && viewItem == s3File",
+          "group": "inline"
+        },
+        {
+          "command": "s3.getInfo",
           "when": "view == s3Explorer && viewItem == s3File",
           "group": "inline"
         },

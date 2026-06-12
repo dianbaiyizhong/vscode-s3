@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { ConnectionManager } from './connectionManager';
-import { createClient, uploadFile, downloadFile, deleteObject, deleteFolder, renameObject, renameFolder, createFolder, testConnection } from './s3Client';
+import { createClient, uploadFile, downloadFile, deleteObject, deleteFolder, renameObject, renameFolder, createFolder, testConnection, getObjectDetail } from './s3Client';
 import { S3ExplorerProvider, S3TreeItem } from './treeView';
 import { PreviewManager, isTextFile, isPreviewable } from './previewManager';
 import { t } from './i18n';
@@ -54,6 +54,9 @@ export function registerCommands(
     ),
     vscode.commands.registerCommand('s3.goToPath', (item: S3TreeItem) =>
       handleGoToPath(connectionManager, treeProvider, item)
+    ),
+    vscode.commands.registerCommand('s3.getInfo', (item: S3TreeItem) =>
+      handleGetInfo(connectionManager, item)
     )
   );
 }
@@ -652,6 +655,57 @@ async function handleFilterFiles(
   } else {
     treeProvider.setFilter(item, pattern);
     vscode.window.setStatusBarMessage(`$(filter) ${t('msg_filterActive')}`, 2000);
+  }
+}
+
+async function handleGetInfo(
+  connectionManager: ConnectionManager,
+  item: S3TreeItem
+): Promise<void> {
+  if (!item || item.contextValue !== 's3File') return;
+
+  const conn = connectionManager.getConnection(item.connectionId);
+  const secrets = await connectionManager.getCredentials(item.connectionId);
+  if (!conn || !secrets) return;
+
+  const client = createClient(conn, secrets);
+
+  try {
+    const detail = await getObjectDetail(client, conn.bucket, item.key);
+
+    const qpItems: (vscode.QuickPickItem & { copyValue: string })[] = [
+      { label: 'Name', description: getLabel(item.key, false), copyValue: getLabel(item.key, false) },
+      { label: 'Key', description: item.key, copyValue: item.key },
+      { label: 'Size', description: detail.size != null ? `${detail.size} bytes` : '-', copyValue: String(detail.size ?? '') },
+      { label: 'ETag', description: detail.etag || '-', copyValue: detail.etag || '' },
+      { label: 'Content-Type', description: detail.contentType || '-', copyValue: detail.contentType || '' },
+      { label: 'Last-Modified', description: detail.lastModified?.toISOString() || '-', copyValue: detail.lastModified?.toISOString() || '' },
+    ];
+
+    if (detail.metadata) {
+      for (const [k, v] of Object.entries(detail.metadata)) {
+        qpItems.push({ label: `Meta: ${k}`, description: v, copyValue: v });
+      }
+    }
+
+    if (detail.tags && detail.tags.length > 0) {
+      for (const t of detail.tags) {
+        qpItems.push({ label: `Tag: ${t.key}`, description: t.value, copyValue: t.value });
+      }
+    }
+
+    const pick = await vscode.window.showQuickPick(qpItems, {
+      title: t('prompt_objectInfo'),
+      matchOnDescription: true,
+      matchOnDetail: true,
+    });
+
+    if (pick) {
+      vscode.env.clipboard.writeText(pick.copyValue);
+      vscode.window.setStatusBarMessage(`$(copy) ${t('msg_copied')}`, 2000);
+    }
+  } catch (err: any) {
+    vscode.window.showErrorMessage(t('msg_infoFailed', err.message));
   }
 }
 

@@ -2,6 +2,8 @@ import * as fs from 'fs';
 import {
   S3Client,
   HeadBucketCommand,
+  HeadObjectCommand,
+  GetObjectTaggingCommand,
   ListObjectsV2Command,
   ListObjectsCommand,
   PutObjectCommand,
@@ -316,6 +318,38 @@ export async function createFolder(
       Body: '',
     })
   );
+}
+
+export interface ObjectDetail {
+  key: string;
+  size?: number;
+  etag?: string;
+  contentType?: string;
+  lastModified?: Date;
+  metadata?: Record<string, string>;
+  tags?: { key: string; value: string }[];
+}
+
+export async function getObjectDetail(
+  client: S3Client,
+  bucket: string,
+  key: string
+): Promise<ObjectDetail> {
+  const head = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+  let tags: { key: string; value: string }[] = [];
+  try {
+    const tagResult = await client.send(new GetObjectTaggingCommand({ Bucket: bucket, Key: key }));
+    tags = (tagResult.TagSet || []).map(t => ({ key: t.Key!, value: t.Value! }));
+  } catch {}
+  return {
+    key,
+    size: head.ContentLength,
+    etag: head.ETag?.replace(/"/g, ''),
+    contentType: head.ContentType,
+    lastModified: head.LastModified,
+    metadata: head.Metadata,
+    tags,
+  };
 }
 
 export async function testConnection(
