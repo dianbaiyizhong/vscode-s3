@@ -3,7 +3,7 @@
   "displayName": "%displayName%",
   "description": "%description%",
   "icon": "logo.png",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "publisher": "nntk",
   "engines": {
     "vscode": "^1.89.0"
@@ -129,10 +129,12 @@
       "view/title": [
         {
           "command": "s3.addConnection",
+          "when": "view == s3Explorer",
           "group": "navigation"
         },
         {
           "command": "s3.refresh",
+          "when": "view == s3Explorer",
           "group": "navigation"
         },
         {
