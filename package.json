@@ -24,8 +24,7 @@
     "onCommand:s3.previewFile",
     "onCommand:s3.rename",
     "onCommand:s3.newFolder",
-    "onCommand:s3.filterFiles",
-    "onCommand:s3.clearFilter",
+    "onCommand:s3.searchFiles",
     "onCommand:s3.goToPath",
     "onCommand:s3.getInfo"
   ],
@@ -105,14 +104,9 @@
         "icon": "$(new-folder)"
       },
       {
-        "command": "s3.filterFiles",
-        "title": "%cmd.filterFiles%",
-        "icon": "$(filter)"
-      },
-      {
-        "command": "s3.clearFilter",
-        "title": "%cmd.clearFilter%",
-        "icon": "$(close)"
+        "command": "s3.searchFiles",
+        "title": "%cmd.searchFiles%",
+        "icon": "$(search)"
       },
       {
         "command": "s3.goToPath",
@@ -136,16 +130,11 @@
           "command": "s3.refresh",
           "when": "view == s3Explorer",
           "group": "navigation"
-        },
-        {
-          "command": "s3.clearFilter",
-          "when": "view == s3Explorer && s3:filterActive",
-          "group": "navigation"
         }
       ],
       "view/item/context": [
         {
-          "command": "s3.filterFiles",
+          "command": "s3.searchFiles",
           "when": "view == s3Explorer && (viewItem == s3Connection || viewItem == s3Folder)",
           "group": "inline"
         },

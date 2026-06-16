@@ -14,8 +14,7 @@
   "cmd.previewFile": "Preview File",
   "cmd.rename": "Rename...",
   "cmd.newFolder": "New Folder...",
-  "cmd.filterFiles": "Filter files...",
-  "cmd.clearFilter": "Clear Filter",
+  "cmd.searchFiles": "Search files...",
   "cmd.goToPath": "Go to Path...",
   "cmd.getInfo": "Get Info"
 }

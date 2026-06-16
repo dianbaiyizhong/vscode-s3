@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { ConnectionManager } from './connectionManager';
-import { createClient, uploadFile, downloadFile, deleteObject, deleteFolder, renameObject, renameFolder, createFolder, testConnection, getObjectDetail } from './s3Client';
+import { createClient, uploadFile, downloadFile, deleteObject, deleteFolder, renameObject, renameFolder, createFolder, testConnection, getObjectDetail, listObjects } from './s3Client';
 import { S3ExplorerProvider, S3TreeItem } from './treeView';
 import { PreviewManager, isTextFile, isPreviewable } from './previewManager';
 import { t } from './i18n';
@@ -46,11 +46,8 @@ export function registerCommands(
     vscode.commands.registerCommand('s3.newFolder', (item: S3TreeItem) =>
       handleNewFolder(connectionManager, treeProvider, item)
     ),
-    vscode.commands.registerCommand('s3.filterFiles', (item: S3TreeItem) =>
-      handleFilterFiles(treeProvider, item)
-    ),
-    vscode.commands.registerCommand('s3.clearFilter', () =>
-      handleClearFilter(treeProvider)
+    vscode.commands.registerCommand('s3.searchFiles', (item: S3TreeItem) =>
+      handleSearchFiles(connectionManager, treeProvider, item)
     ),
     vscode.commands.registerCommand('s3.goToPath', (item: S3TreeItem) =>
       handleGoToPath(connectionManager, treeProvider, item)
@@ -631,31 +628,105 @@ async function handleDeleteConnection(
   treeProvider.refresh();
 }
 
-async function handleFilterFiles(
+async function handleSearchFiles(
+  connectionManager: ConnectionManager,
   treeProvider: S3ExplorerProvider,
   item: S3TreeItem
 ): Promise<void> {
   if (!item || (item.contextValue !== 's3Connection' && item.contextValue !== 's3Folder')) return;
 
-  const filterKey = treeProvider.getFilterKey(item);
-  const currentFilter = filterKey ? treeProvider.getFilter(filterKey) : '';
+  const conn = connectionManager.getConnection(item.connectionId);
+  const secrets = await connectionManager.getCredentials(item.connectionId);
+  if (!conn || !secrets) { vscode.window.showErrorMessage(t('msg_connNotFound')); return; }
+
+  const client = createClient(conn, secrets);
+  const prefix = item.contextValue === 's3Folder' ? item.key : '';
 
   const pattern = await vscode.window.showInputBox({
-    prompt: t('prompt_filterFiles'),
-    placeHolder: t('prompt_filterFiles_placeholder'),
-    value: currentFilter || '',
+    title: t('prompt_searchFiles'),
+    placeHolder: t('prompt_searchFiles_placeholder'),
     ignoreFocusOut: true,
   });
+  if (!pattern) return;
 
-  if (pattern === undefined) return;
+  const objects = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: t('msg_searching', pattern),
+      cancellable: true,
+    },
+    () => listObjects(client, conn.bucket, prefix)
+  );
 
-  if (pattern === '') {
-    treeProvider.clearFilter(item);
-    vscode.window.setStatusBarMessage(`$(filter) ${t('msg_filterCleared')}`, 2000);
-  } else {
-    treeProvider.setFilter(item, pattern);
-    vscode.window.setStatusBarMessage(`$(filter) ${t('msg_filterActive')}`, 2000);
+  const lower = pattern.toLowerCase();
+  const results = objects.filter(o => o.key.toLowerCase().includes(lower));
+
+  if (results.length === 0) {
+    vscode.window.showInformationMessage(t('msg_searchNoResults'));
+    return;
   }
+
+  const qpItems = results.map(r => ({
+    label: r.key.split('/').pop() || r.key,
+    description: r.key,
+    detail: r.size != null ? formatSize(r.size) : '',
+    key: r.key,
+  }));
+
+  const pick = await vscode.window.showQuickPick(qpItems, {
+    title: t('prompt_searchResults', results.length),
+    matchOnDescription: true,
+  });
+
+  if (!pick) return;
+  await revealKey(item.connectionId, pick.key);
+}
+
+async function revealKey(connectionId: string, key: string): Promise<void> {
+  const view = S3ExplorerProvider.treeView;
+  if (!view) return;
+
+  const normalized = key.replace(/\/$/, '');
+  const segments = normalized.split('/');
+  const isTargetFile = !key.endsWith('/');
+
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Window, title: t('msg_navigating'), cancellable: false },
+    async () => {
+      let currentKey = '';
+      for (let i = 0; i < segments.length; i++) {
+        const isLast = i === segments.length - 1;
+        const isFile = isLast && isTargetFile;
+        const segKey = currentKey
+          ? currentKey + segments[i] + (isFile ? '' : '/')
+          : segments[i] + (isFile ? '' : '/');
+        const itemKey = isFile ? segKey.replace(/\/$/, '') : segKey;
+
+        const target = new S3TreeItem(
+          connectionId,
+          itemKey,
+          !isFile,
+          segments[i],
+          !isFile ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None
+        );
+
+        await view.reveal(target, { select: isLast, focus: isLast, expand: !isLast });
+        currentKey = segKey;
+      }
+    }
+  );
+}
+
+function formatSize(bytes?: number): string {
+  if (bytes === undefined) return '';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let size = bytes;
+  let unitIdx = 0;
+  while (size >= 1024 && unitIdx < units.length - 1) {
+    size /= 1024;
+    unitIdx++;
+  }
+  return `${size.toFixed(1)} ${units[unitIdx]}`;
 }
 
 async function handleGetInfo(
@@ -707,11 +778,6 @@ async function handleGetInfo(
   } catch (err: any) {
     vscode.window.showErrorMessage(t('msg_infoFailed', err.message));
   }
-}
-
-function handleClearFilter(treeProvider: S3ExplorerProvider): void {
-  treeProvider.clearAllFilters();
-  vscode.window.setStatusBarMessage(`$(filter) ${t('msg_filterCleared')}`, 2000);
 }
 
 async function handleGoToPath(
