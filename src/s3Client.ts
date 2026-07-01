@@ -39,45 +39,60 @@ export async function listObjects(
   bucket: string,
   prefix: string = ''
 ): Promise<S3ObjectInfo[]> {
-  let commonPrefixes: { Prefix?: string }[] | undefined;
-  let contents: { Key?: string; Size?: number; LastModified?: Date }[] | undefined;
+  const allCommonPrefixes: { Prefix?: string }[] = [];
+  const allContents: { Key?: string; Size?: number; LastModified?: Date }[] = [];
 
-  try {
-    const response = await client.send(
-      new ListObjectsV2Command({
-        Bucket: bucket,
-        Prefix: prefix,
-        Delimiter: '/',
-        MaxKeys: 200,
-      })
-    );
-    commonPrefixes = response.CommonPrefixes;
-    contents = response.Contents;
-  } catch {
-    const response = await client.send(
-      new ListObjectsCommand({
-        Bucket: bucket,
-        Prefix: prefix,
-        Delimiter: '/',
-        MaxKeys: 200,
-      })
-    );
-    commonPrefixes = response.CommonPrefixes;
-    contents = response.Contents;
+  let continuationToken: string | undefined;
+
+  while (true) {
+    try {
+      const response = await client.send(
+        new ListObjectsV2Command({
+          Bucket: bucket,
+          Prefix: prefix,
+          Delimiter: '/',
+          MaxKeys: 200,
+          ContinuationToken: continuationToken,
+        })
+      );
+      if (response.CommonPrefixes) {
+        allCommonPrefixes.push(...response.CommonPrefixes);
+      }
+      if (response.Contents) {
+        allContents.push(...response.Contents);
+      }
+      if (!response.IsTruncated) break;
+      continuationToken = response.NextContinuationToken;
+    } catch {
+      const response = await client.send(
+        new ListObjectsCommand({
+          Bucket: bucket,
+          Prefix: prefix,
+          Delimiter: '/',
+          MaxKeys: 200,
+          Marker: continuationToken,
+        })
+      );
+      if (response.CommonPrefixes) {
+        allCommonPrefixes.push(...response.CommonPrefixes);
+      }
+      if (response.Contents) {
+        allContents.push(...response.Contents);
+      }
+      if (!response.IsTruncated) break;
+      continuationToken = response.NextMarker || response.Contents?.slice(-1)[0]?.Key;
+    }
   }
 
   const items: S3ObjectInfo[] = [];
 
-  for (const cp of commonPrefixes || []) {
+  for (const cp of allCommonPrefixes) {
     if (cp.Prefix) {
-      items.push({
-        key: cp.Prefix,
-        isFolder: true,
-      });
+      items.push({ key: cp.Prefix, isFolder: true });
     }
   }
 
-  for (const obj of contents || []) {
+  for (const obj of allContents) {
     if (!obj.Key) continue;
     if (obj.Key === prefix) continue;
     if (obj.Key.endsWith('/')) continue;
