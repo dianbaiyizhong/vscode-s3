@@ -79,8 +79,8 @@ export class ConnectionManager {
   async removeConnection(id: string): Promise<void> {
     this._connections = this._connections.filter(c => c.id !== id);
     await this.saveConnections();
-    await this.context.secrets.delete(`s3-ak-${id}`);
-    await this.context.secrets.delete(`s3-sk-${id}`);
+    try { await this.context.secrets.delete(`s3-ak-${id}`); } catch {}
+    try { await this.context.secrets.delete(`s3-sk-${id}`); } catch {}
   }
 
   async getCredentials(id: string): Promise<S3ConnectionSecrets | undefined> {
