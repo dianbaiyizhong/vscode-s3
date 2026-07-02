@@ -128,6 +128,7 @@ const en: Record<string, string> = {
   // s3Tree
   tree_connTooltip: '{0}\nBucket: {1}\nEndpoint: {2}',
   tree_fileTooltip: '{0}\nSize: {1}\nModified: {2}',
+  tree_moreItems: 'more items...',
 };
 
 const zh: Record<string, string> = {
@@ -250,6 +251,7 @@ const zh: Record<string, string> = {
 
   tree_connTooltip: '{0}\n存储桶：{1}\n服务地址：{2}',
   tree_fileTooltip: '{0}\n大小：{1}\n修改时间：{2}',
+  tree_moreItems: '更多项目...',
 };
 
 type Dict = Record<string, string>;

@@ -649,13 +649,13 @@ async function handleSearchFiles(
   });
   if (!pattern) return;
 
-  const objects = await vscode.window.withProgress(
+  const { items: objects } = await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
       title: t('msg_searching', pattern),
       cancellable: true,
     },
-    () => listObjects(client, conn.bucket, prefix)
+    () => listObjects(client, conn.bucket, prefix, 0)
   );
 
   const lower = pattern.toLowerCase();

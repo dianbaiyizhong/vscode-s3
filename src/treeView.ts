@@ -176,9 +176,9 @@ export class S3ExplorerProvider implements vscode.TreeDataProvider<S3TreeItem> {
 
     try {
       const client = createClient(conn, secrets);
-      const objects = await listObjects(client, conn.bucket, prefix);
+      const { items: objects, truncated } = await listObjects(client, conn.bucket, prefix);
 
-      return objects.map((obj) => {
+      const treeItems = objects.map((obj) => {
         const label = getLabel(obj.key, obj.isFolder);
         const state = obj.isFolder
           ? vscode.TreeItemCollapsibleState.Collapsed
@@ -194,6 +194,21 @@ export class S3ExplorerProvider implements vscode.TreeDataProvider<S3TreeItem> {
           obj.lastModified
         );
       });
+
+      if (truncated) {
+        const moreItem = new S3TreeItem(
+          connectionId,
+          prefix,
+          false,
+          `... (${t('tree_moreItems')})`,
+          vscode.TreeItemCollapsibleState.None
+        );
+        moreItem.contextValue = '';
+        moreItem.iconPath = new vscode.ThemeIcon('ellipsis');
+        treeItems.push(moreItem);
+      }
+
+      return treeItems;
     } catch (err: any) {
       const msg = err.message || String(err);
       const item = new S3TreeItem(

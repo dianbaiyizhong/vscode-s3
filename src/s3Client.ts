@@ -37,52 +37,67 @@ export interface S3ObjectInfo {
 export async function listObjects(
   client: S3Client,
   bucket: string,
-  prefix: string = ''
-): Promise<S3ObjectInfo[]> {
+  prefix: string = '',
+  maxPages: number = 10
+): Promise<{ items: S3ObjectInfo[]; truncated: boolean }> {
   const allCommonPrefixes: { Prefix?: string }[] = [];
   const allContents: { Key?: string; Size?: number; LastModified?: Date }[] = [];
 
   let continuationToken: string | undefined;
+  let marker: string | undefined;
+  let useV1 = false;
+  let pageCount = 0;
 
-  while (true) {
+  const hasMaxPages = maxPages > 0;
+  while (!hasMaxPages || pageCount < maxPages) {
+    pageCount++;
     try {
-      const response = await client.send(
-        new ListObjectsV2Command({
-          Bucket: bucket,
-          Prefix: prefix,
-          Delimiter: '/',
-          MaxKeys: 200,
-          ContinuationToken: continuationToken,
-        })
-      );
-      if (response.CommonPrefixes) {
-        allCommonPrefixes.push(...response.CommonPrefixes);
+      if (useV1) {
+        const response = await client.send(
+          new ListObjectsCommand({
+            Bucket: bucket,
+            Prefix: prefix,
+            Delimiter: '/',
+            MaxKeys: 200,
+            Marker: marker,
+          })
+        );
+        if (response.CommonPrefixes) {
+          allCommonPrefixes.push(...response.CommonPrefixes);
+        }
+        if (response.Contents) {
+          allContents.push(...response.Contents);
+        }
+        if (!response.IsTruncated) break;
+        marker = response.NextMarker || response.Contents?.slice(-1)[0]?.Key;
+        if (!marker) break;
+      } else {
+        const response = await client.send(
+          new ListObjectsV2Command({
+            Bucket: bucket,
+            Prefix: prefix,
+            Delimiter: '/',
+            MaxKeys: 200,
+            ContinuationToken: continuationToken,
+          })
+        );
+        if (response.CommonPrefixes) {
+          allCommonPrefixes.push(...response.CommonPrefixes);
+        }
+        if (response.Contents) {
+          allContents.push(...response.Contents);
+        }
+        if (!response.IsTruncated) break;
+        continuationToken = response.NextContinuationToken;
       }
-      if (response.Contents) {
-        allContents.push(...response.Contents);
-      }
-      if (!response.IsTruncated) break;
-      continuationToken = response.NextContinuationToken;
     } catch {
-      const response = await client.send(
-        new ListObjectsCommand({
-          Bucket: bucket,
-          Prefix: prefix,
-          Delimiter: '/',
-          MaxKeys: 200,
-          Marker: continuationToken,
-        })
-      );
-      if (response.CommonPrefixes) {
-        allCommonPrefixes.push(...response.CommonPrefixes);
-      }
-      if (response.Contents) {
-        allContents.push(...response.Contents);
-      }
-      if (!response.IsTruncated) break;
-      continuationToken = response.NextMarker || response.Contents?.slice(-1)[0]?.Key;
+      useV1 = true;
+      marker = continuationToken || marker;
+      continuationToken = undefined;
     }
   }
+
+  const truncated = hasMaxPages && pageCount >= maxPages;
 
   const items: S3ObjectInfo[] = [];
 
@@ -109,7 +124,7 @@ export async function listObjects(
     return a.key.localeCompare(b.key);
   });
 
-  return items;
+  return { items, truncated };
 }
 
 export async function uploadFile(
