@@ -16,5 +16,6 @@
   "cmd.newFolder": "New Folder...",
   "cmd.searchFiles": "Search files...",
   "cmd.goToPath": "Go to Path...",
-  "cmd.getInfo": "Get Info"
+  "cmd.getInfo": "Get Info",
+  "cmd.jumpHistory": "Jump History..."
 }

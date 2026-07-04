@@ -26,7 +26,8 @@
     "onCommand:s3.newFolder",
     "onCommand:s3.searchFiles",
     "onCommand:s3.goToPath",
-    "onCommand:s3.getInfo"
+    "onCommand:s3.getInfo",
+    "onCommand:s3.jumpHistory"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -117,6 +118,11 @@
         "command": "s3.getInfo",
         "title": "%cmd.getInfo%",
         "icon": "$(info)"
+      },
+      {
+        "command": "s3.jumpHistory",
+        "title": "%cmd.jumpHistory%",
+        "icon": "$(history)"
       }
     ],
     "menus": {
@@ -128,6 +134,11 @@
         },
         {
           "command": "s3.refresh",
+          "when": "view == s3Explorer",
+          "group": "navigation"
+        },
+        {
+          "command": "s3.jumpHistory",
           "when": "view == s3Explorer",
           "group": "navigation"
         }

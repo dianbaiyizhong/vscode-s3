@@ -14,6 +14,7 @@ const en: Record<string, string> = {
   cmd_rename: 'Rename...',
   cmd_newFolder: 'New Folder...',
   cmd_searchFiles: 'Search files...',
+  cmd_jumpHistory: 'Jump History...',
 
   // prompts
   prompt_connectionName: 'Connection name (e.g., My MinIO)',
@@ -125,6 +126,11 @@ const en: Record<string, string> = {
   msg_verifyWarn: 'Connection test failed: {0}',
   msg_editUpdated: 'Connection updated',
 
+  prompt_jumpHistory: 'Jump History',
+  prompt_jumpHistory_placeholder: 'Select a location to jump to',
+  msg_jumpHistoryEmpty: 'No jump history',
+  msg_pathNotFound: 'Path not found in the bucket',
+
   // s3Tree
   tree_connTooltip: '{0}\nBucket: {1}\nEndpoint: {2}',
   tree_fileTooltip: '{0}\nSize: {1}\nModified: {2}',
@@ -144,6 +150,7 @@ const zh: Record<string, string> = {
   cmd_rename: '重命名...',
   cmd_newFolder: '新建文件夹...',
   cmd_searchFiles: '搜索文件...',
+  cmd_jumpHistory: '跳转历史...',
 
   prompt_connectionName: '连接名称（例如：我的 MinIO）',
   prompt_connectionName_placeholder: '我的 S3 存储',
@@ -248,6 +255,11 @@ const zh: Record<string, string> = {
   msg_verified: '连接 "{0}" 验证成功',
   msg_verifyWarn: '连接测试失败：{0}',
   msg_editUpdated: '连接已更新',
+
+  prompt_jumpHistory: '跳转历史',
+  prompt_jumpHistory_placeholder: '选择要跳转的位置',
+  msg_jumpHistoryEmpty: '暂无跳转记录',
+  msg_pathNotFound: '在存储桶中未找到该路径',
 
   tree_connTooltip: '{0}\n存储桶：{1}\n服务地址：{2}',
   tree_fileTooltip: '{0}\n大小：{1}\n修改时间：{2}',

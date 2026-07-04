@@ -6,6 +6,7 @@ import { createClient, uploadFile } from './s3Client';
 import { S3ExplorerProvider, S3TreeItem } from './treeView';
 import { registerCommands } from './commands';
 import { PreviewManager } from './previewManager';
+import { JumpHistory } from './jumpHistory';
 import { initI18n, t } from './i18n';
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -14,6 +15,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const connectionManager = new ConnectionManager(context);
   const treeProvider = new S3ExplorerProvider(connectionManager);
   const previewManager = new PreviewManager();
+  const jumpHistory = new JumpHistory();
 
   const treeView = vscode.window.createTreeView('s3Explorer', {
     treeDataProvider: treeProvider,
@@ -77,7 +79,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(treeView);
 
-  registerCommands(context, connectionManager, treeProvider, previewManager);
+  registerCommands(context, connectionManager, treeProvider, previewManager, jumpHistory);
 
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument(async (doc) => {

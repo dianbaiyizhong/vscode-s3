@@ -5,13 +5,21 @@ import { createClient, uploadFile, downloadFile, deleteObject, deleteFolder, ren
 import { S3ExplorerProvider, S3TreeItem } from './treeView';
 import { PreviewManager, isTextFile, isPreviewable } from './previewManager';
 import { t } from './i18n';
+import { JumpHistory } from './jumpHistory';
+
+let jumpHistory: JumpHistory;
+let connManager: ConnectionManager;
 
 export function registerCommands(
   context: vscode.ExtensionContext,
   connectionManager: ConnectionManager,
   treeProvider: S3ExplorerProvider,
-  previewManager: PreviewManager
+  previewManager: PreviewManager,
+  history: JumpHistory
 ): void {
+  jumpHistory = history;
+  connManager = connectionManager;
+
   context.subscriptions.push(
     vscode.commands.registerCommand('s3.addConnection', () =>
       addConnection(connectionManager, treeProvider)
@@ -54,6 +62,9 @@ export function registerCommands(
     ),
     vscode.commands.registerCommand('s3.getInfo', (item: S3TreeItem) =>
       handleGetInfo(connectionManager, item)
+    ),
+    vscode.commands.registerCommand('s3.jumpHistory', () =>
+      handleJumpHistory()
     )
   );
 }
@@ -679,17 +690,21 @@ async function handleSearchFiles(
   });
 
   if (!pick) return;
-  await revealKey(item.connectionId, pick.key);
+  const revealed = await revealKey(item.connectionId, pick.key);
+  if (revealed) {
+    jumpHistory.addRecord(item.connectionId, pick.key, getLabel(pick.key, false), conn?.name || '');
+  }
 }
 
-async function revealKey(connectionId: string, key: string): Promise<void> {
+async function revealKey(connectionId: string, key: string): Promise<boolean> {
   const view = S3ExplorerProvider.treeView;
-  if (!view) return;
+  if (!view) return false;
 
   const normalized = key.replace(/\/$/, '');
   const segments = normalized.split('/');
   const isTargetFile = !key.endsWith('/');
 
+  let success = false;
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Window, title: t('msg_navigating'), cancellable: false },
     async () => {
@@ -710,11 +725,18 @@ async function revealKey(connectionId: string, key: string): Promise<void> {
           !isFile ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None
         );
 
-        await view.reveal(target, { select: isLast, focus: isLast, expand: !isLast });
+        try {
+          await view.reveal(target, { select: isLast, focus: isLast, expand: !isLast });
+        } catch {
+          vscode.window.showErrorMessage(t('msg_pathNotFound'));
+          return;
+        }
         currentKey = segKey;
       }
+      success = true;
     }
   );
+  return success;
 }
 
 function formatSize(bytes?: number): string {
@@ -802,6 +824,7 @@ async function handleGoToPath(
   const view = S3ExplorerProvider.treeView;
   if (!view) return;
 
+  let navigated = false;
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Window, title: t('msg_navigating'), cancellable: false },
     async () => {
@@ -820,11 +843,57 @@ async function handleGoToPath(
           !isFile ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None
         );
 
-        await view.reveal(target, { select: isLast, focus: isLast, expand: !isLast });
+        try {
+          await view.reveal(target, { select: isLast, focus: isLast, expand: !isLast });
+        } catch {
+          vscode.window.showErrorMessage(t('msg_pathNotFound'));
+          return;
+        }
         currentKey = segKey;
       }
+      navigated = true;
     }
   );
+
+  if (navigated) {
+    const conn = connectionManager.getConnection(connId);
+    jumpHistory.addRecord(connId, path, segments[segments.length - 1], conn?.name || '');
+  }
+}
+
+async function handleJumpHistory(): Promise<void> {
+  const records = jumpHistory.getRecords();
+  if (records.length === 0) {
+    vscode.window.showInformationMessage(t('msg_jumpHistoryEmpty'));
+    return;
+  }
+
+  const qpItems = records.map((r, idx) => {
+    const date = new Date(r.timestamp);
+    const timeStr = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    return {
+      label: r.label,
+      description: r.key,
+      detail: `${r.connectionName}  ${timeStr}`,
+      idx,
+    };
+  });
+
+  const pick = await vscode.window.showQuickPick(qpItems, {
+    title: t('prompt_jumpHistory'),
+    matchOnDescription: true,
+    matchOnDetail: true,
+    placeHolder: t('prompt_jumpHistory_placeholder'),
+  });
+
+  if (!pick) return;
+
+  const record = records[pick.idx];
+  const revealed = await revealKey(record.connectionId, record.key);
+  if (revealed) {
+    const conn = connManager.getConnection(record.connectionId);
+    jumpHistory.addRecord(record.connectionId, record.key, record.label, conn?.name || '');
+  }
 }
 
 function getLabel(key: string, isFolder: boolean): string {
