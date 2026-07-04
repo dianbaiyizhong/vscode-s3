@@ -14,9 +14,11 @@ import {
   ObjectIdentifier,
 } from '@aws-sdk/client-s3';
 import { S3Connection, S3ConnectionSecrets } from './connectionManager';
+import { HttpProxyAgent } from 'http-proxy-agent';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 
 export function createClient(connection: S3Connection, secrets: S3ConnectionSecrets): S3Client {
-  return new S3Client({
+  const config: ConstructorParameters<typeof S3Client>[0] = {
     endpoint: connection.endpoint,
     region: connection.region,
     credentials: {
@@ -24,7 +26,27 @@ export function createClient(connection: S3Connection, secrets: S3ConnectionSecr
       secretAccessKey: secrets.secretAccessKey,
     },
     forcePathStyle: connection.forcePathStyle,
-  });
+  };
+
+  const proxyEnv = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
+  const noProxyEnv = process.env.NO_PROXY || process.env.no_proxy;
+
+  if (proxyEnv) {
+    const endpointUrl = new URL(connection.endpoint);
+    const shouldProxy = !noProxyEnv || !noProxyEnv.split(',').some(pattern => {
+      const p = pattern.trim();
+      return p && (endpointUrl.hostname === p || endpointUrl.hostname.endsWith('.' + p));
+    });
+
+    if (shouldProxy) {
+      config.requestHandler = {
+        httpAgent: new HttpProxyAgent(proxyEnv),
+        httpsAgent: new HttpsProxyAgent(proxyEnv),
+      };
+    }
+  }
+
+  return new S3Client(config);
 }
 
 export interface S3ObjectInfo {

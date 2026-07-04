@@ -230,6 +230,8 @@
     "typescript": "^5.4.0"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.500.0"
+    "@aws-sdk/client-s3": "^3.500.0",
+    "http-proxy-agent": "^9.1.0",
+    "https-proxy-agent": "^9.1.0"
   }
 }
