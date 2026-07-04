@@ -13,17 +13,17 @@ import {
   DeleteObjectsCommand,
   ObjectIdentifier,
 } from '@aws-sdk/client-s3';
-import { S3Connection, S3ConnectionSecrets } from './connectionManager';
+import { S3Connection } from './connectionManager';
 import { HttpProxyAgent } from 'http-proxy-agent';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 
-export function createClient(connection: S3Connection, secrets: S3ConnectionSecrets): S3Client {
+export function createClient(connection: S3Connection): S3Client {
   const config: ConstructorParameters<typeof S3Client>[0] = {
     endpoint: connection.endpoint,
     region: connection.region,
     credentials: {
-      accessKeyId: secrets.accessKeyId,
-      secretAccessKey: secrets.secretAccessKey,
+      accessKeyId: connection.accessKeyId,
+      secretAccessKey: connection.secretAccessKey,
     },
     forcePathStyle: connection.forcePathStyle,
   };

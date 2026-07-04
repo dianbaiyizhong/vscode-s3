@@ -27,10 +27,9 @@ export function activate(context: vscode.ExtensionContext): void {
         if (!target || (target.contextValue !== 's3Folder' && target.contextValue !== 's3Connection')) return;
 
         const conn = connectionManager.getConnection(target.connectionId);
-        const secrets = await connectionManager.getCredentials(target.connectionId);
-        if (!conn || !secrets) return;
+        if (!conn) return;
 
-        const client = createClient(conn, secrets);
+        const client = createClient(conn);
         const prefix = target.contextValue === 's3Folder' ? target.key : '';
 
         const filePaths: string[] = [];
@@ -100,10 +99,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
       const mapping = previewManager.getMapping(localPath)!;
       const conn = connectionManager.getConnection(mapping.connectionId);
-      const secrets = await connectionManager.getCredentials(mapping.connectionId);
-      if (!conn || !secrets) return;
+      if (!conn) return;
 
-      const client = createClient(conn, secrets);
+      const client = createClient(conn);
       try {
         const content = doc.getText();
         await client.send(

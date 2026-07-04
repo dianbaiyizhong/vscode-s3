@@ -161,13 +161,7 @@ async function addConnection(
         name, endpoint, region, bucket, forcePathStyle, accessKeyId, secretAccessKey,
       });
 
-      const secrets = await connectionManager.getCredentials(conn.id);
-      if (!secrets) {
-        vscode.window.showErrorMessage(t('msg_storeFailed'));
-        return;
-      }
-
-      const client = createClient(conn, secrets);
+      const client = createClient(conn);
       const result = await testConnection(client, bucket);
 
       if (result.ok) {
@@ -200,9 +194,6 @@ async function handleUpload(
   const conn = connectionManager.getConnection(item.connectionId);
   if (!conn) { vscode.window.showErrorMessage(t('msg_connNotFound')); return; }
 
-  const secrets = await connectionManager.getCredentials(item.connectionId);
-  if (!secrets) { vscode.window.showErrorMessage(t('msg_credNotFound')); return; }
-
   const fileUris = await vscode.window.showOpenDialog({
     canSelectFiles: true,
     canSelectMany: true,
@@ -210,7 +201,7 @@ async function handleUpload(
   });
   if (!fileUris || fileUris.length === 0) return;
 
-  const client = createClient(conn, secrets);
+  const client = createClient(conn);
   const prefix = item.isFolder ? item.key : '';
 
   for (const fileUri of fileUris) {
@@ -255,10 +246,7 @@ async function handleDownload(
   const conn = connectionManager.getConnection(files[0].connectionId);
   if (!conn) { vscode.window.showErrorMessage(t('msg_connNotFound')); return; }
 
-  const secrets = await connectionManager.getCredentials(files[0].connectionId);
-  if (!secrets) { vscode.window.showErrorMessage(t('msg_credNotFound')); return; }
-
-  const client = createClient(conn, secrets);
+  const client = createClient(conn);
 
   if (files.length === 1) {
     const fileName = path.basename(files[0].key);
@@ -324,10 +312,7 @@ async function handleDelete(
   const conn = connectionManager.getConnection(items[0].connectionId);
   if (!conn) { vscode.window.showErrorMessage(t('msg_connNotFound')); return; }
 
-  const secrets = await connectionManager.getCredentials(items[0].connectionId);
-  if (!secrets) { vscode.window.showErrorMessage(t('msg_credNotFound')); return; }
-
-  const client = createClient(conn, secrets);
+  const client = createClient(conn);
 
   const confirmMsg = items.length === 1
     ? items[0].isFolder
@@ -374,8 +359,7 @@ async function handlePreviewFile(
   if (!item || item.contextValue !== 's3File') return;
 
   const conn = connectionManager.getConnection(item.connectionId);
-  const secrets = await connectionManager.getCredentials(item.connectionId);
-  if (!conn || !secrets) return;
+  if (!conn) return;
 
   if (!isPreviewable(item.key)) {
     vscode.window.showInformationMessage(t('msg_notPreviewable'));
@@ -385,7 +369,7 @@ async function handlePreviewFile(
   const localPath = previewManager.getTempPath(item.connectionId, item.key);
   previewManager.ensureParentDir(localPath);
 
-  const client = createClient(conn, secrets);
+  const client = createClient(conn);
 
   try {
     await vscode.window.withProgress(
@@ -417,10 +401,9 @@ async function handleRename(
   }
 
   const conn = connectionManager.getConnection(item.connectionId);
-  const secrets = await connectionManager.getCredentials(item.connectionId);
-  if (!conn || !secrets) { vscode.window.showErrorMessage(t('msg_connNotFound')); return; }
+  if (!conn) { vscode.window.showErrorMessage(t('msg_connNotFound')); return; }
 
-  const client = createClient(conn, secrets);
+  const client = createClient(conn);
   const oldName = getLabel(item.key, item.isFolder);
   const prefixPath = item.isFolder
     ? item.key.slice(0, -oldName.length)
@@ -478,10 +461,9 @@ async function handleNewFolder(
   }
 
   const conn = connectionManager.getConnection(item.connectionId);
-  const secrets = await connectionManager.getCredentials(item.connectionId);
-  if (!conn || !secrets) { vscode.window.showErrorMessage(t('msg_connNotFound')); return; }
+  if (!conn) { vscode.window.showErrorMessage(t('msg_connNotFound')); return; }
 
-  const client = createClient(conn, secrets);
+  const client = createClient(conn);
   const parentPrefix = item.contextValue === 's3Folder' ? item.key : '';
 
   const folderName = await vscode.window.showInputBox({
@@ -524,8 +506,6 @@ async function handleEditConnection(
 
   const conn = connectionManager.getConnection(item.connectionId);
   if (!conn) { vscode.window.showErrorMessage(t('msg_connNotFound')); return; }
-
-  const currentSecrets = await connectionManager.getCredentials(item.connectionId);
 
   const name = await vscode.window.showInputBox({
     prompt: t('prompt_edit_connectionName'),
@@ -574,7 +554,7 @@ async function handleEditConnection(
 
   const accessKeyId = await vscode.window.showInputBox({
     prompt: t('prompt_edit_ak'),
-    value: currentSecrets?.accessKeyId || '',
+    value: conn.accessKeyId || '',
     ignoreFocusOut: true,
   });
   if (accessKeyId === undefined) return;
@@ -582,7 +562,7 @@ async function handleEditConnection(
   const secretAccessKey = await vscode.window.showInputBox({
     prompt: t('prompt_edit_sk'),
     password: true,
-    placeHolder: currentSecrets ? t('prompt_edit_sk_unchanged') : t('prompt_edit_sk_required'),
+    placeHolder: conn.accessKeyId ? t('prompt_edit_sk_unchanged') : t('prompt_edit_sk_required'),
     ignoreFocusOut: true,
   });
   if (secretAccessKey === undefined) return;
@@ -599,9 +579,8 @@ async function handleEditConnection(
   );
   if (skipTest === t('prompt_testConnection')) {
     const updatedConn = connectionManager.getConnection(item.connectionId);
-    const secrets = await connectionManager.getCredentials(item.connectionId);
-    if (updatedConn && secrets) {
-      const client = createClient(updatedConn, secrets);
+    if (updatedConn) {
+      const client = createClient(updatedConn);
       const result = await testConnection(client, updatedConn.bucket);
       if (result.ok) {
         vscode.window.showInformationMessage(t('msg_verified', name));
@@ -647,10 +626,9 @@ async function handleSearchFiles(
   if (!item || (item.contextValue !== 's3Connection' && item.contextValue !== 's3Folder')) return;
 
   const conn = connectionManager.getConnection(item.connectionId);
-  const secrets = await connectionManager.getCredentials(item.connectionId);
-  if (!conn || !secrets) { vscode.window.showErrorMessage(t('msg_connNotFound')); return; }
+  if (!conn) { vscode.window.showErrorMessage(t('msg_connNotFound')); return; }
 
-  const client = createClient(conn, secrets);
+  const client = createClient(conn);
   const prefix = item.contextValue === 's3Folder' ? item.key : '';
 
   const pattern = await vscode.window.showInputBox({
@@ -758,10 +736,9 @@ async function handleGetInfo(
   if (!item || item.contextValue !== 's3File') return;
 
   const conn = connectionManager.getConnection(item.connectionId);
-  const secrets = await connectionManager.getCredentials(item.connectionId);
-  if (!conn || !secrets) return;
+  if (!conn) return;
 
-  const client = createClient(conn, secrets);
+  const client = createClient(conn);
 
   try {
     const detail = await getObjectDetail(client, conn.bucket, item.key);

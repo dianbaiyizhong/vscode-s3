@@ -171,11 +171,8 @@ export class S3ExplorerProvider implements vscode.TreeDataProvider<S3TreeItem> {
     const conn = this.connectionManager.getConnection(connectionId);
     if (!conn) return [];
 
-    const secrets = await this.connectionManager.getCredentials(connectionId);
-    if (!secrets) return [];
-
     try {
-      const client = createClient(conn, secrets);
+      const client = createClient(conn);
       const { items: objects, truncated } = await listObjects(client, conn.bucket, prefix);
 
       const treeItems = objects.map((obj) => {
