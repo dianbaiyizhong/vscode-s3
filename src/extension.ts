@@ -33,44 +33,56 @@ export function activate(context: vscode.ExtensionContext): void {
         const client = createClient(conn, secrets);
         const prefix = target.contextValue === 's3Folder' ? target.key : '';
 
-        const uploaded: string[] = [];
-        let failCount = 0;
-
-        const processFile = async (filePath: string) => {
-          const fileName = path.basename(filePath);
-          const key = prefix + fileName;
-          try {
-            await uploadFile(client, conn.bucket, key, filePath);
-            uploaded.push(fileName);
-          } catch { failCount++; }
-        };
+        const filePaths: string[] = [];
 
         const uriList = dataTransfer.get('text/uri-list');
         if (uriList) {
           const text = await uriList.asString();
-          const uris = text.split('\n').filter(l => l.trim()).map(l => vscode.Uri.parse(l.trim()));
-          for (const uri of uris) {
-            if (uri.scheme === 'file') await processFile(uri.fsPath);
+          for (const line of text.split('\n')) {
+            const uri = vscode.Uri.parse(line.trim());
+            if (uri.scheme === 'file') filePaths.push(uri.fsPath);
           }
         }
 
         const filesEntry = dataTransfer.get('files');
         if (filesEntry) {
           const file = filesEntry.asFile();
-          if (file?.uri?.scheme === 'file') {
-            await processFile(file.uri.fsPath);
+          if (file?.uri?.scheme === 'file' && !filePaths.includes(file.uri.fsPath)) {
+            filePaths.push(file.uri.fsPath);
           }
         }
 
-        if (uploaded.length > 0 || failCount > 0) {
-          treeProvider.refresh();
-          if (uploaded.length > 0 && failCount === 0) {
-            vscode.window.showInformationMessage(t('msg_dropUploaded', uploaded.length));
-          } else if (uploaded.length === 0) {
-            vscode.window.showErrorMessage(t('msg_dropFailed'));
-          } else {
-            vscode.window.showWarningMessage(t('msg_dropWarn', t('msg_dropUploaded', uploaded.length), failCount));
+        if (filePaths.length === 0) return;
+
+        const uploaded: string[] = [];
+        let failCount = 0;
+
+        await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: t('msg_uploadingFiles'),
+          },
+          async (progress) => {
+            for (let i = 0; i < filePaths.length; i++) {
+              const filePath = filePaths[i];
+              const fileName = path.basename(filePath);
+              const key = prefix + fileName;
+              progress.report({ message: `${i + 1}/${filePaths.length} - ${fileName}` });
+              try {
+                await uploadFile(client, conn.bucket, key, filePath);
+                uploaded.push(fileName);
+              } catch { failCount++; }
+            }
           }
+        );
+
+        treeProvider.refresh();
+        if (uploaded.length > 0 && failCount === 0) {
+          vscode.window.showInformationMessage(t('msg_dropUploaded', uploaded.length));
+        } else if (uploaded.length === 0) {
+          vscode.window.showErrorMessage(t('msg_dropFailed'));
+        } else {
+          vscode.window.showWarningMessage(t('msg_dropWarn', t('msg_dropUploaded', uploaded.length), failCount));
         }
       },
     },
