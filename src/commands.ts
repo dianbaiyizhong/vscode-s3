@@ -6,9 +6,11 @@ import { S3ExplorerProvider, S3TreeItem } from './treeView';
 import { PreviewManager, isTextFile, isPreviewable } from './previewManager';
 import { t } from './i18n';
 import { JumpHistory } from './jumpHistory';
+import { JumpHistoryPanel } from './jumpHistoryPanel';
 
 let jumpHistory: JumpHistory;
 let connManager: ConnectionManager;
+let s3TreeProvider: S3ExplorerProvider;
 
 export function registerCommands(
   context: vscode.ExtensionContext,
@@ -19,6 +21,7 @@ export function registerCommands(
 ): void {
   jumpHistory = history;
   connManager = connectionManager;
+  s3TreeProvider = treeProvider;
 
   context.subscriptions.push(
     vscode.commands.registerCommand('s3.addConnection', () =>
@@ -851,38 +854,14 @@ async function handleGoToPath(
 }
 
 async function handleJumpHistory(): Promise<void> {
-  const records = jumpHistory.getRecords();
-  if (records.length === 0) {
-    vscode.window.showInformationMessage(t('msg_jumpHistoryEmpty'));
-    return;
-  }
-
-  const qpItems = records.map((r, idx) => {
-    const date = new Date(r.timestamp);
-    const timeStr = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-    return {
-      label: r.label,
-      description: r.key,
-      detail: `${r.connectionName}  ${timeStr}`,
-      idx,
-    };
+  JumpHistoryPanel.createOrShow(jumpHistory, async (record) => {
+    const revealed = await revealKey(s3TreeProvider, record.connectionId, record.key);
+    if (revealed) {
+      const conn = connManager.getConnection(record.connectionId);
+      jumpHistory.addRecord(record.connectionId, record.key, record.label, conn?.name || '');
+    }
+    JumpHistoryPanel.refresh();
   });
-
-  const pick = await vscode.window.showQuickPick(qpItems, {
-    title: t('prompt_jumpHistory'),
-    matchOnDescription: true,
-    matchOnDetail: true,
-    placeHolder: t('prompt_jumpHistory_placeholder'),
-  });
-
-  if (!pick) return;
-
-  const record = records[pick.idx];
-  const revealed = await revealKey(record.connectionId, record.key);
-  if (revealed) {
-    const conn = connManager.getConnection(record.connectionId);
-    jumpHistory.addRecord(record.connectionId, record.key, record.label, conn?.name || '');
-  }
 }
 
 function getLabel(key: string, isFolder: boolean): string {

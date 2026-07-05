@@ -15,7 +15,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const connectionManager = new ConnectionManager(context);
   const treeProvider = new S3ExplorerProvider(connectionManager);
   const previewManager = new PreviewManager();
-  const jumpHistory = new JumpHistory();
+  const jumpHistory = new JumpHistory(context.globalState);
 
   const treeView = vscode.window.createTreeView('s3Explorer', {
     treeDataProvider: treeProvider,
