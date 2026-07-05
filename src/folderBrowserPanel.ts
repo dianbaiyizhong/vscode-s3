@@ -806,6 +806,7 @@ filterInput?.addEventListener('input', () => {
   }
 });
 filterInput?.addEventListener('keydown', e => {
+  if (e.isComposing) return;
   if (e.key === 'Enter') {
     e.preventDefault();
     const val = filterInput.value.trim();
