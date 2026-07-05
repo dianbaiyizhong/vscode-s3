@@ -25,7 +25,6 @@ export class FolderBrowserPanel {
   private loading = false;
   private refreshing = false;
   private searchPattern?: string;
-  private searchToken?: string;
 
   private constructor(
     column: vscode.ViewColumn,
@@ -265,16 +264,18 @@ export class FolderBrowserPanel {
           const pattern = message.pattern as string;
           if (!pattern) break;
           this.searchPattern = pattern;
-          this.searchToken = undefined;
           this.items = [];
-          this.loading = false;
+          this.nextToken = undefined;
           this.render();
           await vscode.window.withProgress(
-            { location: vscode.ProgressLocation.Notification, title: `Searching "${pattern}"...` },
+            { location: vscode.ProgressLocation.Notification, title: `Searching "${pattern}" in ${this.prefix || '/'}...` },
             async () => {
-              await this.loadItems();
+              await this.loadAllSearchPages();
             }
           );
+          if (this.items.length === 0) {
+            vscode.window.showInformationMessage(`No items matching "${pattern}" found`);
+          }
           this.render();
           break;
         }
@@ -320,28 +321,14 @@ export class FolderBrowserPanel {
       const conn = this.connectionManager.getConnection(this.connectionId);
       if (!conn) return;
 
+      const client = createClient(conn);
+      const result = await listObjects(client, conn.bucket, this.prefix, 1, undefined, this.nextToken);
       if (this.searchPattern) {
-        const client = createClient(conn);
-        const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
         const lower = this.searchPattern.toLowerCase();
-        do {
-          const response = await client.send(new ListObjectsV2Command({
-            Bucket: conn.bucket, Prefix: '', MaxKeys: 1000, ContinuationToken: this.searchToken,
-          }));
-          let matched = 0;
-          if (response.Contents) {
-            for (const obj of response.Contents) {
-              if (obj.Key && obj.Key.toLowerCase().includes(lower)) {
-                this.items.push({ key: obj.Key, isFolder: obj.Key.endsWith('/'), size: obj.Size });
-                matched++;
-              }
-            }
-          }
-          this.searchToken = response.IsTruncated ? response.NextContinuationToken : undefined;
-        } while (this.items.length === 0 && this.searchToken);
+        const matched = result.items.filter(i => i.key.replace(/\/$/, '').split('/').pop()?.toLowerCase().includes(lower));
+        this.items.push(...matched);
+        this.nextToken = result.nextToken;
       } else {
-        const client = createClient(conn);
-        const result = await listObjects(client, conn.bucket, this.prefix, 1, undefined, this.nextToken);
         this.items.push(...result.items);
         this.nextToken = result.nextToken;
       }
@@ -350,13 +337,33 @@ export class FolderBrowserPanel {
     }
   }
 
+  private async loadAllSearchPages(): Promise<void> {
+    while (true) {
+      if (this.loading) return;
+      this.loading = true;
+      try {
+        const conn = this.connectionManager.getConnection(this.connectionId);
+        if (!conn) return;
+
+        const client = createClient(conn);
+        const result = await listObjects(client, conn.bucket, this.prefix, 1, undefined, this.nextToken);
+        const lower = this.searchPattern!.toLowerCase();
+        const matched = result.items.filter(i => i.key.replace(/\/$/, '').split('/').pop()?.toLowerCase().includes(lower));
+        this.items.push(...matched);
+        this.nextToken = result.nextToken;
+        if (this.items.length > 0 || !this.nextToken) break;
+      } finally {
+        this.loading = false;
+      }
+    }
+  }
+
   private render(): void {
     this.panel.title = `${this.refreshing ? '⟳ ' : ''}${this.searchPattern ? '🔍 ' + this.searchPattern : this.prefix || '/'} — ${this.connectionName}`;
-    const hasMore = this.searchPattern ? !!this.searchToken : !!this.nextToken;
     this.panel.webview.html = getHtml(
       this.prefix,
       this.items,
-      hasMore,
+      !!this.nextToken,
       this.loading || this.refreshing,
       this.refreshing,
       this.searchPattern
