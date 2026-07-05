@@ -668,13 +668,13 @@ async function handleSearchFiles(
   });
 
   if (!pick) return;
-  const revealed = await revealKey(item.connectionId, pick.key);
+  const revealed = await revealKey(treeProvider, item.connectionId, pick.key);
   if (revealed) {
     jumpHistory.addRecord(item.connectionId, pick.key, getLabel(pick.key, false), conn?.name || '');
   }
 }
 
-async function revealKey(connectionId: string, key: string): Promise<boolean> {
+async function revealKey(treeProvider: S3ExplorerProvider, connectionId: string, key: string): Promise<boolean> {
   const view = S3ExplorerProvider.treeView;
   if (!view) return false;
 
@@ -682,38 +682,44 @@ async function revealKey(connectionId: string, key: string): Promise<boolean> {
   const segments = normalized.split('/');
   const isTargetFile = !key.endsWith('/');
 
+  treeProvider.refresh();
+  S3ExplorerProvider.pendingRevealKey = key;
   let success = false;
-  await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Window, title: t('msg_navigating'), cancellable: false },
-    async () => {
-      let currentKey = '';
-      for (let i = 0; i < segments.length; i++) {
-        const isLast = i === segments.length - 1;
-        const isFile = isLast && isTargetFile;
-        const segKey = currentKey
-          ? currentKey + segments[i] + (isFile ? '' : '/')
-          : segments[i] + (isFile ? '' : '/');
-        const itemKey = isFile ? segKey.replace(/\/$/, '') : segKey;
+  try {
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Window, title: t('msg_navigating'), cancellable: false },
+      async () => {
+        let currentKey = '';
+        for (let i = 0; i < segments.length; i++) {
+          const isLast = i === segments.length - 1;
+          const isFile = isLast && isTargetFile;
+          const segKey = currentKey
+            ? currentKey + segments[i] + (isFile ? '' : '/')
+            : segments[i] + (isFile ? '' : '/');
+          const itemKey = isFile ? segKey.replace(/\/$/, '') : segKey;
 
-        const target = new S3TreeItem(
-          connectionId,
-          itemKey,
-          !isFile,
-          segments[i],
-          !isFile ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None
-        );
+          const target = new S3TreeItem(
+            connectionId,
+            itemKey,
+            !isFile,
+            segments[i],
+            !isFile ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None
+          );
 
-        try {
-          await view.reveal(target, { select: isLast, focus: isLast, expand: !isLast });
-        } catch {
-          vscode.window.showErrorMessage(t('msg_pathNotFound'));
-          return;
+          try {
+            await view.reveal(target, { select: isLast, focus: isLast, expand: !isLast });
+          } catch {
+            vscode.window.showErrorMessage(t('msg_pathNotFound'));
+            return;
+          }
+          currentKey = segKey;
         }
-        currentKey = segKey;
+        success = true;
       }
-      success = true;
-    }
-  );
+    );
+  } finally {
+    S3ExplorerProvider.pendingRevealKey = undefined;
+  }
   return success;
 }
 
@@ -801,36 +807,42 @@ async function handleGoToPath(
   const view = S3ExplorerProvider.treeView;
   if (!view) return;
 
+  treeProvider.refresh();
+  S3ExplorerProvider.pendingRevealKey = path;
   let navigated = false;
-  await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Window, title: t('msg_navigating'), cancellable: false },
-    async () => {
-      let currentKey = '';
-      for (let i = 0; i < segments.length; i++) {
-        const isLast = i === segments.length - 1;
-        const isFile = isLast && !path.endsWith('/');
-        const segKey = currentKey ? currentKey + segments[i] + (isFile ? '' : '/') : segments[i] + (isFile ? '' : '/');
-        const itemKey = isFile ? segKey.replace(/\/$/, '') : segKey;
+  try {
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Window, title: t('msg_navigating'), cancellable: false },
+      async () => {
+        let currentKey = '';
+        for (let i = 0; i < segments.length; i++) {
+          const isLast = i === segments.length - 1;
+          const isFile = isLast && !path.endsWith('/');
+          const segKey = currentKey ? currentKey + segments[i] + (isFile ? '' : '/') : segments[i] + (isFile ? '' : '/');
+          const itemKey = isFile ? segKey.replace(/\/$/, '') : segKey;
 
-        const target = new S3TreeItem(
-          connId,
-          itemKey,
-          !isFile,
-          segments[i],
-          !isFile ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None
-        );
+          const target = new S3TreeItem(
+            connId,
+            itemKey,
+            !isFile,
+            segments[i],
+            !isFile ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None
+          );
 
-        try {
-          await view.reveal(target, { select: isLast, focus: isLast, expand: !isLast });
-        } catch {
-          vscode.window.showErrorMessage(t('msg_pathNotFound'));
-          return;
+          try {
+            await view.reveal(target, { select: isLast, focus: isLast, expand: !isLast });
+          } catch {
+            vscode.window.showErrorMessage(t('msg_pathNotFound'));
+            return;
+          }
+          currentKey = segKey;
         }
-        currentKey = segKey;
+        navigated = true;
       }
-      navigated = true;
-    }
-  );
+    );
+  } finally {
+    S3ExplorerProvider.pendingRevealKey = undefined;
+  }
 
   if (navigated) {
     const conn = connectionManager.getConnection(connId);

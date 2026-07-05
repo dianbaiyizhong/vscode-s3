@@ -113,6 +113,11 @@ npm run compile
 
 # 打包
 npx vsce package
+
+
+# 总
+npm run compile && npx vsce package && code --install-extension vscode-s3-1.0.3.vsix --force
+
 ```
 
 ### 项目结构

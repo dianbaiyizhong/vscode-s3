@@ -83,6 +83,7 @@ export class S3TreeItem extends vscode.TreeItem {
 export class S3ExplorerProvider implements vscode.TreeDataProvider<S3TreeItem> {
   static connectionManager: ConnectionManager | undefined;
   static treeView: vscode.TreeView<S3TreeItem> | undefined;
+  static pendingRevealKey: string | undefined;
 
   private _onDidChangeTreeData = new vscode.EventEmitter<S3TreeItem | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
@@ -173,7 +174,14 @@ export class S3ExplorerProvider implements vscode.TreeDataProvider<S3TreeItem> {
 
     try {
       const client = createClient(conn);
-      const { items: objects, truncated } = await listObjects(client, conn.bucket, prefix);
+      const pendingKey = S3ExplorerProvider.pendingRevealKey;
+      let targetChild: string | undefined;
+      if (pendingKey && pendingKey.startsWith(prefix) && pendingKey !== prefix) {
+        const relative = pendingKey.slice(prefix.length);
+        const nextSeg = relative.split('/')[0];
+        targetChild = prefix + nextSeg + '/';
+      }
+      const { items: objects } = await listObjects(client, conn.bucket, prefix, 1, targetChild);
 
       const treeItems = objects.map((obj) => {
         const label = getLabel(obj.key, obj.isFolder);
@@ -191,19 +199,6 @@ export class S3ExplorerProvider implements vscode.TreeDataProvider<S3TreeItem> {
           obj.lastModified
         );
       });
-
-      if (truncated) {
-        const moreItem = new S3TreeItem(
-          connectionId,
-          prefix,
-          false,
-          `... (${t('tree_moreItems')})`,
-          vscode.TreeItemCollapsibleState.None
-        );
-        moreItem.contextValue = '';
-        moreItem.iconPath = new vscode.ThemeIcon('ellipsis');
-        treeItems.push(moreItem);
-      }
 
       return treeItems;
     } catch (err: any) {
