@@ -24,6 +24,8 @@ export class FolderBrowserPanel {
   private nextToken?: string;
   private loading = false;
   private refreshing = false;
+  private searchPattern?: string;
+  private searchToken?: string;
 
   private constructor(
     column: vscode.ViewColumn,
@@ -55,6 +57,7 @@ export class FolderBrowserPanel {
           this.render();
           break;
         case 'navigate':
+          this.searchPattern = undefined;
           this.prefix = message.prefix;
           this.items = [];
           this.nextToken = undefined;
@@ -65,6 +68,7 @@ export class FolderBrowserPanel {
           this.onNavigate(this.connectionId, message.prefix);
           break;
         case 'navigateUp': {
+          this.searchPattern = undefined;
           const parent = this.getParentPrefix();
           this.prefix = parent;
           this.items = [];
@@ -77,6 +81,7 @@ export class FolderBrowserPanel {
           break;
         }
         case 'goToPath': {
+          this.searchPattern = undefined;
           const conn = this.connectionManager.getConnection(this.connectionId);
           if (!conn) return;
           const rawPath = message.path as string || '';
@@ -210,6 +215,7 @@ export class FolderBrowserPanel {
           break;
         }
         case 'refresh':
+          this.searchPattern = undefined;
           this.refreshing = true;
           this.items = [];
           this.nextToken = undefined;
@@ -256,46 +262,20 @@ export class FolderBrowserPanel {
           break;
         }
         case 'searchFiles': {
-          const conn = this.connectionManager.getConnection(this.connectionId);
-          if (!conn) return;
-          const pattern = await vscode.window.showInputBox({
-            title: 'Search Files',
-            placeHolder: 'Enter search pattern...',
-            ignoreFocusOut: true,
-          });
+          const pattern = message.pattern as string;
           if (!pattern) break;
-          const client = createClient(conn);
-          const { items: objects } = await vscode.window.withProgress(
-            { location: vscode.ProgressLocation.Notification, title: `Searching "${pattern}"...`, cancellable: true },
-            () => listObjects(client, conn.bucket, '', 0)
-          );
-          const lower = pattern.toLowerCase();
-          const results = objects.filter(o => o.key.toLowerCase().includes(lower));
-          if (results.length === 0) {
-            vscode.window.showInformationMessage('No results found');
-            break;
-          }
-          const pick = await vscode.window.showQuickPick(
-            results.map(r => ({
-              label: r.key.split('/').pop() || r.key,
-              description: r.key,
-              detail: r.size != null ? formatSize(r.size) : '',
-              key: r.key,
-            })),
-            { title: `Search Results (${results.length})`, matchOnDescription: true }
-          );
-          if (!pick) break;
-          const trimmed = pick.key.replace(/\/$/, '');
-          const lastSlash = trimmed.lastIndexOf('/');
-          const parentPrefix = lastSlash === -1 ? '' : trimmed.substring(0, lastSlash + 1);
-          this.prefix = parentPrefix;
+          this.searchPattern = pattern;
+          this.searchToken = undefined;
           this.items = [];
-          this.nextToken = undefined;
           this.loading = false;
           this.render();
-          await this.loadItems();
+          await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: `Searching "${pattern}"...` },
+            async () => {
+              await this.loadItems();
+            }
+          );
           this.render();
-          this.onNavigate(this.connectionId, parentPrefix);
           break;
         }
         case 'showError':
@@ -340,23 +320,46 @@ export class FolderBrowserPanel {
       const conn = this.connectionManager.getConnection(this.connectionId);
       if (!conn) return;
 
-      const client = createClient(conn);
-      const result = await listObjects(client, conn.bucket, this.prefix, 1, undefined, this.nextToken);
-      this.items.push(...result.items);
-      this.nextToken = result.nextToken;
+      if (this.searchPattern) {
+        const client = createClient(conn);
+        const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
+        const lower = this.searchPattern.toLowerCase();
+        do {
+          const response = await client.send(new ListObjectsV2Command({
+            Bucket: conn.bucket, Prefix: '', MaxKeys: 1000, ContinuationToken: this.searchToken,
+          }));
+          let matched = 0;
+          if (response.Contents) {
+            for (const obj of response.Contents) {
+              if (obj.Key && obj.Key.toLowerCase().includes(lower)) {
+                this.items.push({ key: obj.Key, isFolder: obj.Key.endsWith('/'), size: obj.Size });
+                matched++;
+              }
+            }
+          }
+          this.searchToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+        } while (this.items.length === 0 && this.searchToken);
+      } else {
+        const client = createClient(conn);
+        const result = await listObjects(client, conn.bucket, this.prefix, 1, undefined, this.nextToken);
+        this.items.push(...result.items);
+        this.nextToken = result.nextToken;
+      }
     } finally {
       this.loading = false;
     }
   }
 
   private render(): void {
-    this.panel.title = `${this.refreshing ? '⟳ ' : ''}${this.prefix || '/'} — ${this.connectionName}`;
+    this.panel.title = `${this.refreshing ? '⟳ ' : ''}${this.searchPattern ? '🔍 ' + this.searchPattern : this.prefix || '/'} — ${this.connectionName}`;
+    const hasMore = this.searchPattern ? !!this.searchToken : !!this.nextToken;
     this.panel.webview.html = getHtml(
       this.prefix,
       this.items,
-      !!this.nextToken,
+      hasMore,
       this.loading || this.refreshing,
-      this.refreshing
+      this.refreshing,
+      this.searchPattern
     );
   }
 }
@@ -377,7 +380,7 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loading: boolean, refreshing: boolean = false): string {
+function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loading: boolean, refreshing: boolean = false, searchPattern?: string): string {
   const folderRows = items.filter(i => i.isFolder).map(i => {
     const name = i.key.replace(/\/$/, '').split('/').pop() || '';
     const data = JSON.stringify(i).replace(/"/g, '&quot;');
@@ -522,6 +525,20 @@ body {
   font-size: 12px;
 }
 .sel-bar .del-btn:hover { background: var(--vscode-button-secondaryHoverBackground); }
+.filter-input {
+  width: 100%;
+  padding: 5px 8px;
+  margin-bottom: 8px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 3px;
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+}
+.filter-input:focus { border-color: var(--vscode-focusBorder); }
+.filter-input::placeholder { color: var(--vscode-input-placeholderForeground); }
 .empty {
   text-align: center;
   margin-top: 48px;
@@ -627,7 +644,6 @@ body {
   <button class="back-btn" id="backBtn" ${!prefix ? 'disabled' : ''}>&#x2190;</button>
   ${refreshing ? '<span class="spinner">⟳</span>' : ''}
   <input class="path-input" id="pathInput" value="${escapeHtml(prefix || '/')}" title="Enter path and press Enter to navigate">
-  <button class="action-btn" id="searchBtn">&#x1F50D; Search</button>
   <button class="action-btn" id="refreshBtn" ${refreshing ? 'disabled' : ''}>${refreshing ? '⟳' : '&#x21BB;'} Refresh</button>
   <button class="action-btn" id="uploadBtn">&#x2B06; Upload</button>
 </div>
@@ -635,6 +651,7 @@ body {
   <span class="count" id="selCount">0 selected</span>
   <button class="del-btn" id="delSelectedBtn">Delete Selected</button>
 </div>
+<input class="filter-input" id="filterInput" type="text" placeholder="Type to filter, press Enter to search all..." value="${searchPattern ? escapeHtml(searchPattern) : ''}"${searchPattern ? ' data-searching="1"' : ''} autocomplete="off">
 ${emptyState}
 ${allRows}
 ${loadMoreBtn}
@@ -778,8 +795,31 @@ if (backBtn && !backBtn.disabled) {
 document.getElementById('uploadBtn')?.addEventListener('click', () => {
   vscodeApi.postMessage({ type: 'upload' });
 });
-document.getElementById('searchBtn')?.addEventListener('click', () => {
-  vscodeApi.postMessage({ type: 'searchFiles' });
+const filterInput = document.getElementById('filterInput');
+filterInput?.addEventListener('input', () => {
+  const q = filterInput.value.toLowerCase();
+  if (filterInput.dataset.searching) {
+    document.querySelectorAll('.item').forEach(el => {
+      const name = el.querySelector('.item-name')?.textContent?.toLowerCase() || '';
+      el.style.display = !q || name.includes(q) ? '' : 'none';
+    });
+  }
+});
+filterInput?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const val = filterInput.value.trim();
+    if (!val) { filterInput.value = ''; filterInput.dataset.searching = ''; vscodeApi.postMessage({ type: 'refresh' }); return; }
+    filterInput.dataset.searching = '1';
+    vscodeApi.postMessage({ type: 'searchFiles', pattern: val });
+  } else if (e.key === 'Escape') {
+    filterInput.value = '';
+    filterInput.blur();
+    if (filterInput.dataset.searching) {
+      filterInput.dataset.searching = '';
+      vscodeApi.postMessage({ type: 'refresh' });
+    }
+  }
 });
 document.getElementById('pathInput')?.addEventListener('keydown', e => {
   if (e.key === 'Enter') {

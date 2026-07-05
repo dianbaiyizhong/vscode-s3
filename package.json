@@ -17,7 +17,6 @@
     "onCommand:s3.editConnection",
     "onCommand:s3.refresh",
     "onCommand:s3.goToPath",
-    "onCommand:s3.searchFiles",
     "onCommand:s3.jumpHistory",
     "onCommand:s3.openConnection"
   ],
@@ -65,11 +64,6 @@
         "command": "s3.goToPath",
         "title": "%cmd.goToPath%",
         "icon": "$(arrow-right)"
-      },
-      {
-        "command": "s3.searchFiles",
-        "title": "%cmd.searchFiles%",
-        "icon": "$(search)"
       },
       {
         "command": "s3.jumpHistory",

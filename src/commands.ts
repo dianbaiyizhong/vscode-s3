@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ConnectionManager } from './connectionManager';
-import { createClient, listObjects, testConnection } from './s3Client';
+import { createClient, testConnection } from './s3Client';
 import { S3ExplorerProvider, S3TreeItem } from './treeView';
 import { t } from './i18n';
 import { JumpHistory } from './jumpHistory';
@@ -37,9 +37,6 @@ export function registerCommands(
     ),
     vscode.commands.registerCommand('s3.goToPath', (item: S3TreeItem) =>
       handleGoToPath(connectionManager, item)
-    ),
-    vscode.commands.registerCommand('s3.searchFiles', (item: S3TreeItem) =>
-      handleSearchFiles(connectionManager, item)
     ),
     vscode.commands.registerCommand('s3.jumpHistory', () =>
       handleJumpHistory()
@@ -228,60 +225,6 @@ async function deleteConnection(
 
   connectionManager.removeConnection(item.connectionId);
   treeProvider.refresh();
-}
-
-async function handleSearchFiles(
-  connectionManager: ConnectionManager,
-  item: S3TreeItem
-): Promise<void> {
-  if (!item || item.contextValue !== 's3Connection') return;
-  const conn = connectionManager.getConnection(item.connectionId);
-  if (!conn) return;
-
-  const pattern = await vscode.window.showInputBox({
-    title: t('prompt_searchFiles'),
-    placeHolder: t('prompt_searchFiles_placeholder'),
-    ignoreFocusOut: true,
-  });
-  if (!pattern) return;
-
-  const client = createClient(conn);
-  const { items: objects } = await vscode.window.withProgress(
-    {
-      location: vscode.ProgressLocation.Notification,
-      title: t('msg_searching', pattern),
-      cancellable: true,
-    },
-    () => listObjects(client, conn.bucket, '', 0)
-  );
-
-  const lower = pattern.toLowerCase();
-  const results = objects.filter(o => o.key.toLowerCase().includes(lower));
-
-  if (results.length === 0) {
-    vscode.window.showInformationMessage(t('msg_searchNoResults'));
-    return;
-  }
-
-  const pick = await vscode.window.showQuickPick(
-    results.map(r => ({
-      label: r.key.split('/').pop() || r.key,
-      description: r.key,
-      detail: r.size != null ? formatSize(r.size) : '',
-      key: r.key,
-    })),
-    {
-      title: t('prompt_searchResults', results.length),
-      matchOnDescription: true,
-    }
-  );
-
-  if (!pick) return;
-  jumpHistory.addRecord(item.connectionId, pick.key, getLabel(pick.key, false), conn.name);
-  const parentPrefix = getParentPrefix(pick.key);
-  FolderBrowserPanel.create(connManager, item.connectionId, parentPrefix, getLabel(pick.key, false), (id, p) => {
-    jumpHistory.addRecord(id, p, getLabel(p, true), conn.name);
-  });
 }
 
 async function handleGoToPath(
