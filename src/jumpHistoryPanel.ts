@@ -36,6 +36,7 @@ export class JumpHistoryPanel {
       column,
       { enableScripts: true }
     );
+    this.panel.iconPath = new vscode.ThemeIcon('history');
 
     this.render(history.getRecords());
 

@@ -1,89 +1,32 @@
 import * as vscode from 'vscode';
 import { ConnectionManager } from './connectionManager';
-import { createClient, listObjects, S3ObjectInfo } from './s3Client';
-import { isTextFile, isImageFile, isVideoFile } from './previewManager';
 import { t } from './i18n';
-
-function getLabel(key: string, isFolder: boolean): string {
-  const normalized = key.replace(/\/$/, '');
-  const parts = normalized.split('/');
-  return parts[parts.length - 1] || '/';
-}
-
-function formatSize(bytes?: number): string {
-  if (bytes === undefined) return '';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let size = bytes;
-  let unitIdx = 0;
-  while (size >= 1024 && unitIdx < units.length - 1) {
-    size /= 1024;
-    unitIdx++;
-  }
-  return `${size.toFixed(1)} ${units[unitIdx]}`;
-}
-
-function formatDate(date?: Date): string {
-  if (!date) return '';
-  return date.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
 
 export class S3TreeItem extends vscode.TreeItem {
   constructor(
     public readonly connectionId: string,
-    public readonly key: string,
-    public readonly isFolder: boolean,
     label: string,
-    collapsibleState: vscode.TreeItemCollapsibleState,
-    size?: number,
-    lastModified?: Date,
-    public readonly connectionName?: string,
-    public readonly bucketName?: string
+    public readonly connectionName: string,
+    public readonly bucketName: string,
+    endpoint: string
   ) {
-    super(label, collapsibleState);
+    super(label, vscode.TreeItemCollapsibleState.None);
 
-    this.id = `${connectionId}|${key}`;
-
-    if (connectionName && bucketName && key === '') {
-      this.contextValue = 's3Connection';
-      this.tooltip = t('tree_connTooltip', connectionName, bucketName, this.getEndpoint());
-      this.description = bucketName;
-    } else if (isFolder) {
-      this.contextValue = 's3Folder';
-      this.tooltip = key;
-      this.description = '';
-      this.iconPath = vscode.ThemeIcon.Folder;
-    } else {
-      this.contextValue = 's3File';
-      this.tooltip = t('tree_fileTooltip', key, formatSize(size), formatDate(lastModified));
-      this.description = `${formatSize(size)}`;
-
-      if (isImageFile(key) || isVideoFile(key)) {
-        this.iconPath = new vscode.ThemeIcon('file-media');
-      } else if (isTextFile(key)) {
-        this.iconPath = new vscode.ThemeIcon('file-text');
-      } else {
-        this.iconPath = vscode.ThemeIcon.File;
-      }
-
-
-    }
-  }
-
-  private getEndpoint(): string {
-    const conn = S3ExplorerProvider.connectionManager?.getConnection(this.connectionId);
-    return conn?.endpoint || '';
+    this.id = connectionId;
+    this.contextValue = 's3Connection';
+    this.tooltip = t('tree_connTooltip', connectionName, bucketName, endpoint);
+    this.description = bucketName;
+    this.iconPath = new vscode.ThemeIcon('cloud');
+    this.command = {
+      command: 's3.openConnection',
+      title: '',
+      arguments: [this],
+    };
   }
 }
 
 export class S3ExplorerProvider implements vscode.TreeDataProvider<S3TreeItem> {
   static connectionManager: ConnectionManager | undefined;
-  static treeView: vscode.TreeView<S3TreeItem> | undefined;
-  static pendingRevealKey: string | undefined;
 
   private _onDidChangeTreeData = new vscode.EventEmitter<S3TreeItem | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
@@ -101,118 +44,20 @@ export class S3ExplorerProvider implements vscode.TreeDataProvider<S3TreeItem> {
     return element;
   }
 
-  getParent(element: S3TreeItem): vscode.ProviderResult<S3TreeItem> {
-    if (element.key === '') return undefined;
-
-    const normalized = element.key.replace(/\/$/, '');
-    const lastSlash = normalized.lastIndexOf('/');
-
-    let parentKey: string;
-    let isRoot = false;
-
-    if (lastSlash === -1) {
-      parentKey = '';
-      isRoot = true;
-    } else {
-      parentKey = normalized.substring(0, lastSlash + 1);
-    }
-
-    if (isRoot) {
-      const conn = this.connectionManager.getConnection(element.connectionId);
-      if (!conn) return undefined;
-      return new S3TreeItem(
-        element.connectionId, '', true, conn.name,
-        vscode.TreeItemCollapsibleState.Collapsed,
-        undefined, undefined, conn.name, conn.bucket
-      );
-    }
-
-    return new S3TreeItem(
-      element.connectionId, parentKey, true,
-      getLabel(parentKey, true),
-      vscode.TreeItemCollapsibleState.Collapsed
-    );
+  getParent(): vscode.ProviderResult<S3TreeItem> {
+    return undefined;
   }
 
   async getChildren(element?: S3TreeItem): Promise<S3TreeItem[]> {
     if (!element) {
       return this.getConnectionItems();
     }
-
-    if (element.contextValue === 's3Connection') {
-      return await this.getObjectItems(element.connectionId, '');
-    }
-
-    if (element.contextValue === 's3Folder') {
-      return await this.getObjectItems(element.connectionId, element.key);
-    }
-
     return [];
   }
 
   private getConnectionItems(): S3TreeItem[] {
-    return this.connectionManager.connections.map((conn) => {
-      const item = new S3TreeItem(
-        conn.id,
-        '',
-        true,
-        conn.name,
-        vscode.TreeItemCollapsibleState.Collapsed,
-        undefined,
-        undefined,
-        conn.name,
-        conn.bucket
-      );
-      item.iconPath = new vscode.ThemeIcon('cloud');
-      return item;
-    });
-  }
-
-  private async getObjectItems(connectionId: string, prefix: string): Promise<S3TreeItem[]> {
-    const conn = this.connectionManager.getConnection(connectionId);
-    if (!conn) return [];
-
-    try {
-      const client = createClient(conn);
-      const pendingKey = S3ExplorerProvider.pendingRevealKey;
-      let targetChild: string | undefined;
-      if (pendingKey && pendingKey.startsWith(prefix) && pendingKey !== prefix) {
-        const relative = pendingKey.slice(prefix.length);
-        const nextSeg = relative.split('/')[0];
-        targetChild = prefix + nextSeg + '/';
-      }
-      const { items: objects } = await listObjects(client, conn.bucket, prefix, 1, targetChild);
-
-      const treeItems = objects.map((obj) => {
-        const label = getLabel(obj.key, obj.isFolder);
-        const state = obj.isFolder
-          ? vscode.TreeItemCollapsibleState.Collapsed
-          : vscode.TreeItemCollapsibleState.None;
-
-        return new S3TreeItem(
-          connectionId,
-          obj.key,
-          obj.isFolder,
-          label,
-          state,
-          obj.size,
-          obj.lastModified
-        );
-      });
-
-      return treeItems;
-    } catch (err: any) {
-      const msg = err.message || String(err);
-      const item = new S3TreeItem(
-        connectionId,
-        '',
-        false,
-        `Error: ${msg}`,
-        vscode.TreeItemCollapsibleState.None
-      );
-      item.contextValue = '';
-      item.iconPath = new vscode.ThemeIcon('error');
-      return [item];
-    }
+    return this.connectionManager.connections.map((conn) =>
+      new S3TreeItem(conn.id, conn.name, conn.name, conn.bucket, conn.endpoint)
+    );
   }
 }

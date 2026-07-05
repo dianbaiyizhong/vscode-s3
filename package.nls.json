@@ -18,5 +18,5 @@
   "cmd.goToPath": "Go to Path...",
   "cmd.getInfo": "Get Info",
   "cmd.jumpHistory": "Jump History...",
-  "cmd.browseFolder": "Browse Folder"
+  "cmd.openConnection": "Open Connection"
 }
