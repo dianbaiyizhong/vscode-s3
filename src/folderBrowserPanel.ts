@@ -220,7 +220,10 @@ export class FolderBrowserPanel {
           this.nextToken = undefined;
           this.loading = false;
           this.render();
-          await this.loadItems();
+          await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Window, title: 'Refreshing...' },
+            () => this.loadItems()
+          );
           this.refreshing = false;
           this.render();
           break;
@@ -359,7 +362,7 @@ export class FolderBrowserPanel {
   }
 
   private render(): void {
-    this.panel.title = `${this.refreshing ? '⟳ ' : ''}${this.searchPattern ? '🔍 ' + this.searchPattern : this.prefix || '/'} — ${this.connectionName}`;
+    this.panel.title = `${this.searchPattern ? '🔍 ' + this.searchPattern : this.prefix || '/'} — ${this.connectionName}`;
     this.panel.webview.html = getHtml(
       this.prefix,
       this.items,
@@ -507,8 +510,6 @@ body {
   opacity: 0.7;
 }
 .icon-btn:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground); }
-@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-.spinner { display: inline-block; animation: spin 1s linear infinite; }
 .sel-bar {
   display: none;
   align-items: center;
@@ -649,10 +650,9 @@ body {
 <div class="drag-overlay" id="dragOverlay">Drop files to upload</div>
 <div class="header">
   <button class="back-btn" id="backBtn" ${!prefix ? 'disabled' : ''}>&#x2190;</button>
-  ${refreshing ? '<span class="spinner">⟳</span>' : ''}
   <input class="path-input" id="pathInput" value="${escapeHtml(prefix || '/')}" title="Enter path and press Enter to navigate">
-  <button class="action-btn" id="refreshBtn" ${refreshing ? 'disabled' : ''}>${refreshing ? '⟳' : '&#x21BB;'} Refresh</button>
-  <button class="action-btn" id="uploadBtn">&#x2B06; Upload</button>
+  <button class="action-btn" id="refreshBtn" ${refreshing ? 'disabled' : ''}>Refresh</button>
+  <button class="action-btn" id="uploadBtn">Upload</button>
 </div>
 <div class="sel-bar" id="selBar">
   <span class="count" id="selCount">0 selected</span>
