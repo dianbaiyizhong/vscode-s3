@@ -7,6 +7,7 @@ import { PreviewManager, isTextFile, isPreviewable } from './previewManager';
 import { t } from './i18n';
 import { JumpHistory } from './jumpHistory';
 import { JumpHistoryPanel } from './jumpHistoryPanel';
+import { FolderBrowserPanel } from './folderBrowserPanel';
 
 let jumpHistory: JumpHistory;
 let connManager: ConnectionManager;
@@ -68,6 +69,9 @@ export function registerCommands(
     ),
     vscode.commands.registerCommand('s3.jumpHistory', () =>
       handleJumpHistory()
+    ),
+    vscode.commands.registerCommand('s3.browseFolder', (item: S3TreeItem) =>
+      handleBrowseFolder(item)
     )
   );
 }
@@ -851,6 +855,16 @@ async function handleGoToPath(
     const conn = connectionManager.getConnection(connId);
     jumpHistory.addRecord(connId, path, segments[segments.length - 1], conn?.name || '');
   }
+}
+
+function handleBrowseFolder(item: S3TreeItem): void {
+  if (item.contextValue !== 's3Folder' || !item.connectionId) return;
+  const conn = connManager.getConnection(item.connectionId);
+  if (!conn) return;
+  const label = item.label || item.key.replace(/\/$/, '').split('/').pop() || '/';
+  FolderBrowserPanel.createOrShow(conn, item.connectionId, item.key, label, (_, prefix) => {
+    jumpHistory.addRecord(item.connectionId, prefix, getLabel(prefix, true), conn?.name || '');
+  });
 }
 
 async function handleJumpHistory(): Promise<void> {

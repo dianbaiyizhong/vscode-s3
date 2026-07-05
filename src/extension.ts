@@ -7,12 +7,14 @@ import { S3ExplorerProvider, S3TreeItem } from './treeView';
 import { registerCommands } from './commands';
 import { PreviewManager } from './previewManager';
 import { JumpHistory } from './jumpHistory';
+import { setConnectionManager } from './folderBrowserPanel';
 import { initI18n, t } from './i18n';
 
 export function activate(context: vscode.ExtensionContext): void {
   initI18n();
 
   const connectionManager = new ConnectionManager(context);
+  setConnectionManager(connectionManager);
   const treeProvider = new S3ExplorerProvider(connectionManager);
   const previewManager = new PreviewManager();
   const jumpHistory = new JumpHistory(context.globalState);

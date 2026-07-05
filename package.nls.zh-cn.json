@@ -17,5 +17,6 @@
   "cmd.searchFiles": "搜索文件...",
   "cmd.goToPath": "跳转到路径...",
   "cmd.getInfo": "详细信息",
-  "cmd.jumpHistory": "跳转历史..."
+  "cmd.jumpHistory": "跳转历史...",
+  "cmd.browseFolder": "浏览文件夹"
 }

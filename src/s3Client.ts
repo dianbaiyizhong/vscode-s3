@@ -61,15 +61,17 @@ export async function listObjects(
   bucket: string,
   prefix: string = '',
   maxPages: number = 1,
-  targetKey?: string
-): Promise<{ items: S3ObjectInfo[]; truncated: boolean }> {
+  targetKey?: string,
+  startToken?: string
+): Promise<{ items: S3ObjectInfo[]; nextToken?: string }> {
   const allCommonPrefixes: { Prefix?: string }[] = [];
   const allContents: { Key?: string; Size?: number; LastModified?: Date }[] = [];
 
-  let continuationToken: string | undefined;
+  let continuationToken: string | undefined = startToken;
   let marker: string | undefined;
   let useV1 = false;
   let pageCount = 0;
+  let isTruncated = false;
 
   const hasMaxPages = maxPages > 0 && !targetKey;
   while (!hasMaxPages || pageCount < maxPages) {
@@ -92,6 +94,7 @@ export async function listObjects(
           allContents.push(...response.Contents);
         }
         if (!response.IsTruncated) break;
+        isTruncated = true;
         marker = response.NextMarker || response.Contents?.slice(-1)[0]?.Key;
         if (!marker) break;
       } else {
@@ -111,6 +114,7 @@ export async function listObjects(
           allContents.push(...response.Contents);
         }
         if (!response.IsTruncated) break;
+        isTruncated = true;
         continuationToken = response.NextContinuationToken;
       }
     } catch {
@@ -125,8 +129,6 @@ export async function listObjects(
       if (found) break;
     }
   }
-
-  const truncated = false;
 
   const items: S3ObjectInfo[] = [];
 
@@ -153,7 +155,7 @@ export async function listObjects(
     return a.key.localeCompare(b.key);
   });
 
-  return { items, truncated };
+  return { items, nextToken: isTruncated ? (continuationToken || marker) : undefined };
 }
 
 export async function uploadFile(

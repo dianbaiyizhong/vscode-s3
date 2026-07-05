@@ -27,7 +27,8 @@
     "onCommand:s3.searchFiles",
     "onCommand:s3.goToPath",
     "onCommand:s3.getInfo",
-    "onCommand:s3.jumpHistory"
+    "onCommand:s3.jumpHistory",
+    "onCommand:s3.browseFolder"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -123,6 +124,11 @@
         "command": "s3.jumpHistory",
         "title": "%cmd.jumpHistory%",
         "icon": "$(history)"
+      },
+      {
+        "command": "s3.browseFolder",
+        "title": "%cmd.browseFolder%",
+        "icon": "$(window)"
       }
     ],
     "menus": {
@@ -192,6 +198,11 @@
         {
           "command": "s3.goToPath",
           "when": "view == s3Explorer && (viewItem == s3Connection || viewItem == s3Folder)",
+          "group": "inline"
+        },
+        {
+          "command": "s3.browseFolder",
+          "when": "view == s3Explorer && viewItem == s3Folder",
           "group": "inline"
         },
         {
