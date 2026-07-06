@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { createClient, listObjects, uploadFile, downloadFile, deleteObject, deleteFolder, renameObject, renameFolder, S3ObjectInfo } from './s3Client';
 import { ConnectionManager } from './connectionManager';
+import { t } from './i18n';
 
 export class FolderBrowserPanel {
 
@@ -249,20 +250,21 @@ export class FolderBrowserPanel {
           if (!uris || uris.length === 0) return;
           const client = createClient(conn);
           let successCount = 0;
+          let failCount = 0;
           await vscode.window.withProgress(
-            {
-              location: vscode.ProgressLocation.Notification,
-              title: 'Uploading files...',
-            },
+            { location: vscode.ProgressLocation.Window, title: 'Uploading...' },
             async (progress) => {
               for (let i = 0; i < uris.length; i++) {
                 const fileName = path.basename(uris[i].fsPath);
                 const key = this.prefix + fileName;
-                progress.report({ message: `${i + 1}/${uris.length} - ${fileName}` });
+                progress.report({ message: `${i + 1}/${uris.length} ${fileName}`, increment: Math.round(100 / uris.length) });
                 try {
                   await uploadFile(client, conn.bucket, key, uris[i].fsPath);
                   successCount++;
-                } catch {}
+                } catch (err: any) {
+                  failCount++;
+                  vscode.window.showErrorMessage(`Upload failed: ${fileName} - ${err.message}`);
+                }
               }
             }
           );
@@ -272,6 +274,11 @@ export class FolderBrowserPanel {
             this.loading = false;
             await this.loadItems();
             this.render();
+          }
+          if (failCount > 0 && successCount > 0) {
+            vscode.window.showWarningMessage(`Uploaded ${successCount} file(s), ${failCount} failed`);
+          } else if (successCount > 0 && failCount === 0) {
+            vscode.window.showInformationMessage(`Uploaded ${successCount} file(s) successfully`);
           }
           break;
         }
@@ -302,19 +309,27 @@ export class FolderBrowserPanel {
           if (!conn) return;
           const fileName = message.fileName as string;
           const base64 = message.content as string;
-          if (!fileName || !base64) return;
+          if (!fileName || !base64) break;
           const key = this.prefix + fileName;
           const client = createClient(conn);
           try {
-            const buffer = Buffer.from(base64, 'base64');
-            const { PutObjectCommand } = await import('@aws-sdk/client-s3');
-            await client.send(new PutObjectCommand({ Bucket: conn.bucket, Key: key, Body: buffer }));
+            await vscode.window.withProgress(
+              { location: vscode.ProgressLocation.Window, title: `Uploading ${fileName}...` },
+              async () => {
+                const buffer = Buffer.from(base64, 'base64');
+                const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+                await client.send(new PutObjectCommand({ Bucket: conn.bucket, Key: key, Body: buffer }));
+              }
+            );
             this.items = [];
             this.nextToken = undefined;
             this.loading = false;
             await this.loadItems();
             this.render();
-          } catch {}
+            vscode.window.showInformationMessage(`Uploaded ${fileName} successfully`);
+          } catch (err: any) {
+            vscode.window.showErrorMessage(`Upload failed: ${fileName} - ${err.message}`);
+          }
           break;
         }
       }
@@ -403,6 +418,15 @@ function escapeHtml(text: string): string {
 }
 
 function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loading: boolean, refreshing: boolean = false, searchPattern?: string): string {
+  const headerRow = `<div class="list-header">
+    <span></span>
+    <span></span>
+    <span onclick="sortBy('name')">${t('wv_name')}<span class="sort-icon"></span></span>
+    <span onclick="sortBy('size')">${t('wv_size')}<span class="sort-icon"></span></span>
+    <span onclick="sortBy('date')">${t('wv_modified')}<span class="sort-icon"></span></span>
+    <span>${t('wv_actions')}</span>
+  </div>`;
+
   const folderRows = items.filter(i => i.isFolder).map(i => {
     const name = i.key.replace(/\/$/, '').split('/').pop() || '';
     const data = JSON.stringify(i).replace(/"/g, '&quot;');
@@ -410,10 +434,12 @@ function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loadin
       <input type="checkbox" class="item-cb">
       <span class="item-icon">&#x1F4C1;</span>
       <span class="item-name">${escapeHtml(name)}</span>
+      <span class="item-meta"></span>
+      <span class="item-date"></span>
       <span class="item-actions">
-        <span class="action" data-action="rename" title="Rename">&#x270F;</span>
-        <span class="action" data-action="delete" title="Delete">&#x1F5D1;</span>
-        <span class="action" data-action="copyPath" title="Copy Path">&#x1F4CB;</span>
+        <span class="action" data-action="rename" title="${t('wv_rename')}">&#x270F;</span>
+        <span class="action" data-action="delete" title="${t('wv_delete')}">&#x1F5D1;</span>
+        <span class="action" data-action="copyPath" title="${t('wv_copyPath')}">&#x1F4CB;</span>
       </span>
     </div>`;
   }).join('');
@@ -426,11 +452,12 @@ function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loadin
       <span class="item-icon">&#x1F4C4;</span>
       <span class="item-name">${escapeHtml(name)}</span>
       <span class="item-meta">${formatSize(i.size)}</span>
+      <span class="item-date">${i.lastModified ? formatDate(new Date(i.lastModified)) : ''}</span>
       <span class="item-actions">
-        <span class="action" data-action="rename" title="Rename">&#x270F;</span>
-        <span class="action" data-action="download" title="Download">&#x2B07;</span>
-        <span class="action" data-action="delete" title="Delete">&#x1F5D1;</span>
-        <span class="action" data-action="copyPath" title="Copy Path">&#x1F4CB;</span>
+        <span class="action" data-action="rename" title="${t('wv_rename')}">&#x270F;</span>
+        <span class="action" data-action="download" title="${t('wv_download')}">&#x2B07;</span>
+        <span class="action" data-action="delete" title="${t('wv_delete')}">&#x1F5D1;</span>
+        <span class="action" data-action="copyPath" title="${t('wv_copyPath')}">&#x1F4CB;</span>
       </span>
     </div>`;
   }).join('');
@@ -439,12 +466,12 @@ function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loadin
 
   const loadMoreBtn = hasMore
     ? `<button class="btn" id="loadMoreBtn" ${loading ? 'disabled' : ''}>
-        ${loading ? 'Loading...' : 'Load More'}
+        ${loading ? t('wv_loading') : t('wv_loadMore')}
        </button>`
     : '';
 
   const emptyState = !allRows && !loading
-    ? '<div class="empty">This folder is empty</div>'
+    ? `<div class="empty">${t('wv_empty')}</div>`
     : '';
 
   return `<!DOCTYPE html>
@@ -499,16 +526,17 @@ body {
   background: var(--vscode-input-background);
 }
 .action-btn {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
+  background: transparent;
+  color: var(--vscode-foreground);
   border: none;
-  padding: 4px 12px;
+  padding: 2px 6px;
   cursor: pointer;
   border-radius: 3px;
   font-size: 13px;
   white-space: nowrap;
+  line-height: 1;
 }
-.action-btn:hover { background: var(--vscode-button-hoverBackground); }
+.action-btn:hover { background: var(--vscode-toolbar-hoverBackground); }
 .action-btn:disabled { opacity: 0.5; cursor: default; }
 .icon-btn {
   background: none;
@@ -564,12 +592,27 @@ body {
   margin-top: 48px;
   color: var(--vscode-descriptionForeground);
 }
-.item {
-  display: flex;
+.list-header, .item {
+  display: grid;
+  grid-template-columns: var(--col-cb, 28px) var(--col-icon, 24px) var(--col-name, 1fr) var(--col-size, 90px) var(--col-date, 140px) var(--col-actions, 120px);
   align-items: center;
   gap: 6px;
   padding: 4px 8px;
   border-radius: 3px;
+}
+.list-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+  border-bottom: 1px solid var(--vscode-panel-border);
+  margin-bottom: 4px;
+  padding-bottom: 4px;
+  user-select: none;
+}
+.list-header > span { cursor: pointer; }
+.list-header > span:hover { color: var(--vscode-foreground); }
+.list-header .sort-icon { margin-left: 2px; font-size: 10px; }
+.item {
   cursor: default;
   border: 1px solid transparent;
   transition: background 0.1s;
@@ -578,17 +621,16 @@ body {
 .item.selected { background: var(--vscode-list-inactiveSelectionBackground); }
 .item.folder { cursor: pointer; }
 .item-cb {
-  flex-shrink: 0;
   width: 14px;
   height: 14px;
   cursor: pointer;
   accent-color: var(--vscode-focusBorder);
 }
-.item-icon { font-size: 15px; flex-shrink: 0; }
-.item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.item-meta { font-size: 11px; color: var(--vscode-descriptionForeground); white-space: nowrap; margin-right: 4px; }
-.item-actions { display: none; gap: 2px; flex-shrink: 0; }
-.item:hover .item-actions { display: flex; }
+.item-icon { font-size: 15px; text-align: center; }
+.item-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-meta { font-size: 11px; color: var(--vscode-descriptionForeground); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item-date { font-size: 11px; color: var(--vscode-descriptionForeground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item-actions { display: flex; gap: 2px; }
 .action {
   display: inline-flex;
   align-items: center;
@@ -628,7 +670,6 @@ body {
   justify-content: center;
   font-size: 18px;
   font-weight: 600;
-  pointer-events: none;
   z-index: 999;
 }
 .drag-overlay.show { display: flex; }
@@ -659,24 +700,98 @@ body {
 </style>
 </head>
 <body>
-<div class="drag-overlay" id="dragOverlay">Drop files to upload</div>
+<div class="drag-overlay" id="dragOverlay">${t('wv_dropUpload')}</div>
 <div class="header">
   <button class="back-btn" id="backBtn" ${!prefix ? 'disabled' : ''}>&#x2190;</button>
   <input class="path-input" id="pathInput" value="${escapeHtml(prefix || '/')}" title="Enter path and press Enter to navigate">
-  <button class="action-btn" id="refreshBtn" ${refreshing ? 'disabled' : ''}>&#x21BB; Refresh</button>
-  <button class="action-btn" id="uploadBtn">&#x2B06; Upload</button>
+  <button class="action-btn" id="refreshBtn" ${refreshing ? 'disabled' : ''}>${t('wv_refresh')}</button>
+  <button class="action-btn" id="uploadBtn">${t('wv_upload')}</button>
 </div>
 <div class="sel-bar" id="selBar">
-  <span class="count" id="selCount">0 selected</span>
-  <button class="del-btn" id="delSelectedBtn">Delete Selected</button>
+  <span class="count" id="selCount" data-format="${t('wv_selected')}">${t('wv_selected', '0')}</span>
+  <button class="del-btn" id="delSelectedBtn">${t('wv_deleteSelected')}</button>
 </div>
-<input class="filter-input" id="filterInput" type="text" placeholder="Type to filter, press Enter to search all..." value="${searchPattern ? escapeHtml(searchPattern) : ''}"${searchPattern ? ' data-searching="1"' : ''} autocomplete="off">
+<input class="filter-input" id="filterInput" type="text" placeholder="${t('wv_filterPlaceholder')}" value="${searchPattern ? escapeHtml(searchPattern) : ''}"${searchPattern ? ' data-searching="1"' : ''} autocomplete="off">
 ${emptyState}
+${headerRow}
 ${allRows}
 ${loadMoreBtn}
 <div class="cm" id="ctxMenu"></div>
 <script>
 const vscodeApi = acquireVsCodeApi();
+const l10n = ${JSON.stringify({
+    rename: t('wv_rename'),
+    download: t('wv_download'),
+    delete: t('wv_delete'),
+    copyPath: t('wv_copyPath'),
+    selected: t('wv_selected'),
+  })};
+
+let sortCol = '';
+let sortDir = 1;
+function sortBy(col) {
+  if (sortCol === col) sortDir *= -1; else { sortCol = col; sortDir = 1; }
+  const container = document.body;
+  const items = Array.from(document.querySelectorAll('.item'));
+  const header = document.querySelector('.list-header');
+  const loadMoreBtn = document.getElementById('loadMoreBtn');
+  const refNode = loadMoreBtn || header?.nextSibling || null;
+  const headers = document.querySelectorAll('.list-header .sort-icon');
+  headers.forEach(h => h.textContent = '');
+  const activeHeader = document.querySelectorAll('.list-header > span')[['name','size','date'].indexOf(col) + 2];
+  if (activeHeader) activeHeader.querySelector('.sort-icon').textContent = sortDir > 0 ? '▲' : '▼';
+  items.sort((a, b) => {
+    const va = a.dataset.item ? JSON.parse(a.dataset.item) : {};
+    const vb = b.dataset.item ? JSON.parse(b.dataset.item) : {};
+    let cmp = 0;
+    if (col === 'name') cmp = va.key.localeCompare(vb.key);
+    else if (col === 'size') cmp = (va.size || 0) - (vb.size || 0);
+    else if (col === 'date') cmp = new Date(va.lastModified||0) - new Date(vb.lastModified||0);
+    return cmp * sortDir;
+  });
+  items.forEach(el => container.insertBefore(el, refNode));
+}
+
+// column resize
+const colVars = ['cb','icon','name','size','date','actions'];
+let resizeData = null;
+document.addEventListener('mousedown', e => {
+  const headerCell = e.target.closest('.list-header > span');
+  if (!headerCell) return;
+  const idx = Array.from(headerCell.parentNode.children).indexOf(headerCell);
+  if (idx < 2 || idx > 4) return;
+  const rect = headerCell.getBoundingClientRect();
+  if (e.clientX < rect.right - 6 && e.clientX > rect.left + 6) return;
+  const startX = e.clientX;
+  const startW = rect.width;
+  resizeData = { idx, startX, startW };
+  e.preventDefault();
+});
+document.addEventListener('mousemove', e => {
+  if (!resizeData) return;
+  const { idx, startX, startW } = resizeData;
+  const dx = e.clientX - startX;
+  const newW = Math.max(40, startW + dx);
+  document.body.style.setProperty('--col-' + colVars[idx], newW + 'px');
+});
+document.addEventListener('mouseup', () => {
+  if (!resizeData) return;
+  const vals = {};
+  colVars.forEach(v => {
+    const val = document.body.style.getPropertyValue('--col-' + v);
+    if (val) vals[v] = val;
+  });
+  vscodeApi.setState({ ...(vscodeApi.getState() || {}), colWidths: vals });
+  resizeData = null;
+});
+
+// restore saved widths
+const saved = vscodeApi.getState();
+if (saved?.colWidths) {
+  colVars.forEach(v => {
+    if (saved.colWidths[v]) document.body.style.setProperty('--col-' + v, saved.colWidths[v]);
+  });
+}
 
 // highlight target file
 window.addEventListener('message', e => {
@@ -714,7 +829,8 @@ function updateSelBar() {
     return;
   }
   selBar.classList.add('show');
-  selCount.textContent = checked.length + ' selected';
+  const fmt = selCount.dataset.format || '{0} selected';
+  selCount.textContent = fmt.replace('{0}', checked.length);
 }
 
 delBtn.addEventListener('click', () => {
@@ -743,10 +859,10 @@ document.addEventListener('contextmenu', e => {
     div.addEventListener('click', () => { ctxMenu.classList.remove('show'); vscodeApi.postMessage({ type: action, item }); });
     ctxMenu.appendChild(div);
   };
-  addItem('✏ Rename', 'rename');
-  if (isFile) addItem('⬇ Download', 'download');
-  addItem('🗑 Delete', 'delete');
-  addItem('📋 Copy Path', 'copyPath');
+  addItem('✏ ' + l10n.rename, 'rename');
+  if (isFile) addItem('⬇ ' + l10n.download, 'download');
+  addItem('🗑 ' + l10n.delete, 'delete');
+  addItem('📋 ' + l10n.copyPath, 'copyPath');
   ctxMenu.style.left = e.clientX + 'px';
   ctxMenu.style.top = e.clientY + 'px';
   ctxMenu.classList.add('show');
@@ -756,29 +872,31 @@ document.addEventListener('click', e => {
   if (!e.target.closest('#ctxMenu')) ctxMenu.classList.remove('show');
 });
 
-// drag-and-drop — use capture phase to intercept before VS Code
-let dragCounter = 0;
+// drag-and-drop
 const overlay = document.getElementById('dragOverlay');
 
-['dragenter', 'dragover', 'dragleave', 'drop'].forEach(type => {
-  document.addEventListener(type, e => {
-    e.preventDefault();
-    e.stopPropagation();
-  }, true);
-});
-
 document.addEventListener('dragenter', e => {
-  dragCounter++;
+  e.preventDefault();
+  e.dataTransfer.effectAllowed = 'copy';
   overlay.classList.add('show');
 }, true);
 
+document.addEventListener('dragover', e => {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+}, true);
+
 document.addEventListener('dragleave', e => {
-  dragCounter--;
-  if (dragCounter <= 0) { dragCounter = 0; overlay.classList.remove('show'); }
+  e.preventDefault();
+  if (e.target === document || e.target === document.body) {
+    overlay.classList.remove('show');
+  }
 }, true);
 
 document.addEventListener('drop', async e => {
-  dragCounter = 0;
+  e.preventDefault();
+  e.stopPropagation();
+  e.dataTransfer.dropEffect = 'copy';
   overlay.classList.remove('show');
   const files = Array.from(e.dataTransfer.files);
   if (files.length === 0) return;

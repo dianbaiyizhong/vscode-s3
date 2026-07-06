@@ -134,6 +134,25 @@ const en: Record<string, string> = {
   // s3Tree
   tree_connTooltip: '{0}\nBucket: {1}\nEndpoint: {2}',
   tree_fileTooltip: '{0}\nSize: {1}\nModified: {2}',
+
+  // webview
+  wv_name: 'Name',
+  wv_size: 'Size',
+  wv_modified: 'Modified',
+  wv_actions: 'Actions',
+  wv_refresh: 'Refresh',
+  wv_upload: 'Upload',
+  wv_loadMore: 'Load More',
+  wv_loading: 'Loading...',
+  wv_deleteSelected: 'Delete Selected',
+  wv_selected: '{0} selected',
+  wv_filterPlaceholder: 'Type to filter, press Enter to search all...',
+  wv_dropUpload: 'Drop files to upload',
+  wv_empty: 'This folder is empty',
+  wv_rename: 'Rename',
+  wv_download: 'Download',
+  wv_delete: 'Delete',
+  wv_copyPath: 'Copy Path',
 };
 
 const zh: Record<string, string> = {
@@ -262,6 +281,25 @@ const zh: Record<string, string> = {
 
   tree_connTooltip: '{0}\n存储桶：{1}\n服务地址：{2}',
   tree_fileTooltip: '{0}\n大小：{1}\n修改时间：{2}',
+
+  // webview
+  wv_name: '名称',
+  wv_size: '大小',
+  wv_modified: '修改时间',
+  wv_actions: '操作',
+  wv_refresh: '刷新',
+  wv_upload: '上传',
+  wv_loadMore: '加载更多',
+  wv_loading: '加载中...',
+  wv_deleteSelected: '删除选中',
+  wv_selected: '已选 {0} 项',
+  wv_filterPlaceholder: '输入过滤，按回车搜索全部...',
+  wv_dropUpload: '拖拽文件上传',
+  wv_empty: '此文件夹为空',
+  wv_rename: '重命名',
+  wv_download: '下载',
+  wv_delete: '删除',
+  wv_copyPath: '复制路径',
 };
 
 type Dict = Record<string, string>;
