@@ -285,20 +285,81 @@ export class FolderBrowserPanel {
         case 'searchFiles': {
           const pattern = message.pattern as string;
           if (!pattern) break;
-          this.searchPattern = pattern;
-          this.items = [];
-          this.nextToken = undefined;
-          this.render();
-          await vscode.window.withProgress(
-            { location: vscode.ProgressLocation.Notification, title: `Searching "${pattern}" in ${this.prefix || '/'}...` },
-            async () => {
-              await this.loadAllSearchPages();
+          if (pattern.includes('/')) {
+            this.searchPattern = undefined;
+            const trimmed = pattern.replace(/\/$/, '');
+            const lastSlash = trimmed.lastIndexOf('/');
+            const lastSegment = lastSlash === -1 ? pattern : trimmed.substring(lastSlash + 1);
+            if (pattern.endsWith('/') || !lastSegment.includes('.')) {
+              this.prefix = pattern.endsWith('/') ? pattern : pattern + '/';
+              this.items = [];
+              this.nextToken = undefined;
+              this.loading = false;
+              this.render();
+              await this.loadItems();
+              this.render();
+            } else {
+              this.prefix = lastSlash === -1 ? '' : trimmed.substring(0, lastSlash + 1);
+              this.items = [];
+              this.nextToken = undefined;
+              this.loading = false;
+              this.render();
+              await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: `Finding ${lastSegment}...` },
+                async () => {
+                  const conn = this.connectionManager.getConnection(this.connectionId);
+                  if (!conn) return;
+                  const client = createClient(conn);
+                  const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
+                  let token: string | undefined;
+                  while (true) {
+                    const response = await client.send(new ListObjectsV2Command({
+                      Bucket: conn.bucket, Prefix: this.prefix, Delimiter: '/', MaxKeys: 200, ContinuationToken: token,
+                    }));
+                    const found = (response.Contents || []).find(o => {
+                      const name = o.Key?.replace(/\/$/, '').split('/').pop();
+                      return name === lastSegment;
+                    });
+                    if (found) {
+                      this.items = [{ key: found.Key!, isFolder: false, size: found.Size, lastModified: found.LastModified }];
+                      return;
+                    }
+                    if (!response.IsTruncated) break;
+                    token = response.NextContinuationToken;
+                  }
+                  this.items = [];
+                }
+              );
+              if (this.items.length > 0) {
+                this.render();
+                this.panel.webview.postMessage({ type: 'highlight', name: lastSegment });
+              } else {
+                vscode.window.showInformationMessage(`File "${lastSegment}" not found in ${this.prefix || '/'}`);
+                this.prefix = this.prefix || '';
+                this.items = [];
+                this.nextToken = undefined;
+                this.loading = false;
+                this.render();
+                await this.loadItems();
+                this.render();
+              }
             }
-          );
-          if (this.items.length === 0) {
-            vscode.window.showInformationMessage(`No items matching "${pattern}" found`);
+          } else {
+            this.searchPattern = pattern;
+            this.items = [];
+            this.nextToken = undefined;
+            this.render();
+            await vscode.window.withProgress(
+              { location: vscode.ProgressLocation.Notification, title: `Searching "${pattern}" in ${this.prefix || '/'}...` },
+              async () => {
+                await this.loadAllSearchPages();
+              }
+            );
+            if (this.items.length === 0) {
+              vscode.window.showInformationMessage(`No items matching "${pattern}" found`);
+            }
+            this.render();
           }
-          this.render();
           break;
         }
         case 'showError':
