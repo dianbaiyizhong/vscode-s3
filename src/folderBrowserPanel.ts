@@ -85,13 +85,22 @@ export class FolderBrowserPanel {
           if (!conn) return;
           const rawPath = message.path as string || '';
           if (!rawPath) break;
-          const trimmed = rawPath.replace(/\/$/, '');
           let newPrefix: string;
-          if (!trimmed) {
+          let targetFile: string | undefined;
+          if (rawPath === '/') {
             newPrefix = '';
+          } else if (rawPath.endsWith('/')) {
+            newPrefix = rawPath;
           } else {
+            const trimmed = rawPath.replace(/\/$/, '');
             const lastSlash = trimmed.lastIndexOf('/');
-            newPrefix = lastSlash === -1 ? trimmed + '/' : trimmed.substring(0, lastSlash + 1);
+            const lastSegment = lastSlash === -1 ? trimmed : trimmed.substring(lastSlash + 1);
+            if (lastSegment.includes('.')) {
+              newPrefix = lastSlash === -1 ? '' : trimmed.substring(0, lastSlash + 1);
+              targetFile = lastSegment;
+            } else {
+              newPrefix = rawPath + '/';
+            }
           }
           this.prefix = newPrefix;
           this.items = [];
@@ -100,6 +109,9 @@ export class FolderBrowserPanel {
           this.render();
           await this.loadItems();
           this.render();
+          if (targetFile) {
+            this.panel.webview.postMessage({ type: 'highlight', name: targetFile });
+          }
           this.onNavigate(this.connectionId, newPrefix);
           break;
         }
@@ -651,8 +663,8 @@ body {
 <div class="header">
   <button class="back-btn" id="backBtn" ${!prefix ? 'disabled' : ''}>&#x2190;</button>
   <input class="path-input" id="pathInput" value="${escapeHtml(prefix || '/')}" title="Enter path and press Enter to navigate">
-  <button class="action-btn" id="refreshBtn" ${refreshing ? 'disabled' : ''}>Refresh</button>
-  <button class="action-btn" id="uploadBtn">Upload</button>
+  <button class="action-btn" id="refreshBtn" ${refreshing ? 'disabled' : ''}>&#x21BB; Refresh</button>
+  <button class="action-btn" id="uploadBtn">&#x2B06; Upload</button>
 </div>
 <div class="sel-bar" id="selBar">
   <span class="count" id="selCount">0 selected</span>
@@ -665,6 +677,23 @@ ${loadMoreBtn}
 <div class="cm" id="ctxMenu"></div>
 <script>
 const vscodeApi = acquireVsCodeApi();
+
+// highlight target file
+window.addEventListener('message', e => {
+  if (e.data.type === 'highlight') {
+    const items = document.querySelectorAll('.item');
+    for (const el of items) {
+      const name = el.querySelector('.item-name')?.textContent;
+      if (name === e.data.name) {
+        el.style.background = 'var(--vscode-list-activeSelectionBackground)';
+        el.style.color = 'var(--vscode-list-activeSelectionForeground)';
+        el.scrollIntoView({ block: 'center' });
+        setTimeout(() => { el.style.transition = 'background 1s'; el.style.background = ''; el.style.color = ''; }, 2000);
+        break;
+      }
+    }
+  }
+});
 
 // selection
 const selBar = document.getElementById('selBar');

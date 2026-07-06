@@ -242,8 +242,9 @@ async function handleGoToPath(
   });
   if (!targetPath) return;
 
+  const isDir = targetPath.endsWith('/');
   const segments = targetPath.replace(/\/$/, '').split('/');
-  const prefix = getParentPrefix(targetPath);
+  const prefix = isDir ? targetPath : getParentPrefix(targetPath);
 
   jumpHistory.addRecord(item.connectionId, targetPath, segments[segments.length - 1], conn.name);
   FolderBrowserPanel.create(connManager, item.connectionId, prefix, segments[segments.length - 1], (id, p) => {
