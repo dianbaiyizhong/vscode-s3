@@ -439,7 +439,7 @@ export class FolderBrowserPanel {
         const matched = result.items.filter(i => i.key.replace(/\/$/, '').split('/').pop()?.toLowerCase().includes(lower));
         this.items.push(...matched);
         this.nextToken = result.nextToken;
-        if (this.items.length > 0 || !this.nextToken) break;
+        if (this.items.length > 0 || this.nextToken === undefined) break;
       } finally {
         this.loading = false;
       }
@@ -451,7 +451,7 @@ export class FolderBrowserPanel {
     this.panel.webview.html = getHtml(
       this.prefix,
       this.items,
-      !!this.nextToken,
+      this.nextToken !== undefined,
       this.loading || this.refreshing,
       this.refreshing,
       this.searchPattern

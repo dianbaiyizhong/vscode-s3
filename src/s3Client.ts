@@ -56,19 +56,29 @@ export interface S3ObjectInfo {
   lastModified?: Date;
 }
 
+function getLastKey(response: { CommonPrefixes?: { Prefix?:string }[]; Contents?: { Key?:string }[] }): string | undefined {
+  const contents = response.Contents || [];
+  if (contents.length > 0) {
+    return contents[contents.length - 1].Key;
+  }
+  const prefixes = response.CommonPrefixes || [];
+  if (prefixes.length > 0) {
+    return prefixes[prefixes.length - 1].Prefix;
+  }
+}
+
 export async function listObjects(
   client: S3Client,
   bucket: string,
   prefix: string = '',
   maxPages: number = 1,
   targetKey?: string,
-  startToken?: string
+  startAfter?: string
 ): Promise<{ items: S3ObjectInfo[]; nextToken?: string }> {
   const allCommonPrefixes: { Prefix?: string }[] = [];
   const allContents: { Key?: string; Size?: number; LastModified?: Date }[] = [];
 
-  let continuationToken: string | undefined = startToken;
-  let marker: string | undefined;
+  let cursor: string | undefined = startAfter;
   let useV1 = false;
   let pageCount = 0;
   let isTruncated = false;
@@ -84,7 +94,7 @@ export async function listObjects(
             Prefix: prefix,
             Delimiter: '/',
             MaxKeys: 200,
-            Marker: marker,
+            Marker: cursor,
           })
         );
         if (response.CommonPrefixes) {
@@ -95,8 +105,8 @@ export async function listObjects(
         }
         if (!response.IsTruncated) break;
         isTruncated = true;
-        marker = response.NextMarker || response.Contents?.slice(-1)[0]?.Key;
-        if (!marker) break;
+        cursor = response.NextMarker || getLastKey(response);
+        if (!cursor) break;
       } else {
         const response = await client.send(
           new ListObjectsV2Command({
@@ -104,7 +114,7 @@ export async function listObjects(
             Prefix: prefix,
             Delimiter: '/',
             MaxKeys: 200,
-            ContinuationToken: continuationToken,
+            ...(cursor ? { StartAfter: cursor } : {}),
           })
         );
         if (response.CommonPrefixes) {
@@ -115,12 +125,11 @@ export async function listObjects(
         }
         if (!response.IsTruncated) break;
         isTruncated = true;
-        continuationToken = response.NextContinuationToken;
+        cursor = getLastKey(response);
+        if (!cursor) break;
       }
     } catch {
       useV1 = true;
-      marker = continuationToken || marker;
-      continuationToken = undefined;
     }
 
     if (targetKey) {
@@ -155,7 +164,7 @@ export async function listObjects(
     return a.key.localeCompare(b.key);
   });
 
-  return { items, nextToken: isTruncated ? (continuationToken || marker) : undefined };
+  return { items, nextToken: isTruncated ? cursor : undefined };
 }
 
 export async function uploadFile(
