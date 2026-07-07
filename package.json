@@ -15,6 +15,7 @@
     "onView:s3Explorer",
     "onCommand:s3.addConnection",
     "onCommand:s3.editConnection",
+    "onCommand:s3.openSettings",
     "onCommand:s3.refresh",
     "onCommand:s3.goToPath",
     "onCommand:s3.jumpHistory",
@@ -40,6 +41,11 @@
       ]
     },
     "commands": [
+      {
+        "command": "s3.openSettings",
+        "title": "%cmd.openSettings%",
+        "icon": "$(gear)"
+      },
       {
         "command": "s3.addConnection",
         "title": "%cmd.addConnection%",
@@ -78,6 +84,11 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "s3.openSettings",
+          "when": "view == s3Explorer",
+          "group": "navigation"
+        },
         {
           "command": "s3.addConnection",
           "when": "view == s3Explorer",

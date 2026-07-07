@@ -2,13 +2,14 @@ import * as vscode from 'vscode';
 
 const en: Record<string, string> = {
   // commands
-  cmd_addConnection: 'Add S3 Connection...',
+  cmd_openSettings: 'Settings...',
+  cmd_addConnection: 'Add Connection',
   cmd_refresh: 'Refresh',
   cmd_uploadFile: 'Upload File...',
   cmd_downloadFile: 'Download...',
   cmd_delete: 'Delete',
   cmd_removeConnection: 'Remove Connection',
-  cmd_editConnection: 'Edit Connection...',
+  cmd_editConnection: 'Edit Connection',
   cmd_copyPath: 'Copy Path',
   cmd_previewFile: 'Preview File',
   cmd_rename: 'Rename...',
@@ -153,10 +154,26 @@ const en: Record<string, string> = {
   wv_download: 'Download',
   wv_delete: 'Delete',
   wv_copyPath: 'Copy Path',
+
+  // settings panel
+  wv_settings_title: 'S3 Settings',
+  wv_settings_add: 'Add Connection',
+  wv_settings_edit: 'Edit',
+  wv_settings_delete: 'Delete',
+  wv_settings_empty: 'No connections configured. Click "Add Connection" to get started.',
+  wv_settings_add_title: 'Add Connection',
+  wv_settings_edit_title: 'Edit Connection',
+  wv_settings_save: 'Save',
+  wv_settings_test: 'Test Connection',
+  wv_settings_cancel: 'Cancel',
+  wv_settings_back: 'Back',
+  val_required: 'Name, Endpoint, Bucket, Access Key ID, and Secret Access Key are required',
+  val_endpointBucketRequired: 'Endpoint and Bucket are required to test',
 };
 
 const zh: Record<string, string> = {
-  cmd_addConnection: '添加 S3 连接...',
+  cmd_openSettings: '设置...',
+  cmd_addConnection: '添加连接',
   cmd_refresh: '刷新',
   cmd_uploadFile: '上传文件...',
   cmd_downloadFile: '下载...',
@@ -300,6 +317,21 @@ const zh: Record<string, string> = {
   wv_download: '下载',
   wv_delete: '删除',
   wv_copyPath: '复制路径',
+
+  // settings panel
+  wv_settings_title: 'S3 设置',
+  wv_settings_add: '添加连接',
+  wv_settings_edit: '编辑',
+  wv_settings_delete: '删除',
+  wv_settings_empty: '暂无连接配置。点击"添加连接"开始使用。',
+  wv_settings_add_title: '添加连接',
+  wv_settings_edit_title: '编辑连接',
+  wv_settings_save: '保存',
+  wv_settings_test: '测试连接',
+  wv_settings_cancel: '取消',
+  wv_settings_back: '返回',
+  val_required: '名称、服务地址、存储桶、Access Key ID 和 Secret Access Key 为必填项',
+  val_endpointBucketRequired: '需要服务地址和存储桶才能测试',
 };
 
 type Dict = Record<string, string>;

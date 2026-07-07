@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
 import { ConnectionManager } from './connectionManager';
-import { createClient, testConnection } from './s3Client';
 import { S3ExplorerProvider, S3TreeItem } from './treeView';
 import { t } from './i18n';
 import { JumpHistory } from './jumpHistory';
 import { JumpHistoryPanel } from './jumpHistoryPanel';
 import { FolderBrowserPanel } from './folderBrowserPanel';
+import { SettingsPanel } from './settingsPanel';
 
 let jumpHistory: JumpHistory;
 let connManager: ConnectionManager;
@@ -20,14 +20,17 @@ export function registerCommands(
   connManager = connectionManager;
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('s3.openSettings', () =>
+      SettingsPanel.createOrShow(connectionManager)
+    ),
     vscode.commands.registerCommand('s3.addConnection', () =>
-      addConnection(connectionManager, treeProvider)
+      SettingsPanel.createOrShow(connectionManager)
     ),
     vscode.commands.registerCommand('s3.refresh', (item?: S3TreeItem) =>
       treeProvider.refresh(item)
     ),
     vscode.commands.registerCommand('s3.editConnection', (item: S3TreeItem) =>
-      editConnection(connectionManager, treeProvider, item)
+      SettingsPanel.createOrShow(connectionManager)
     ),
     vscode.commands.registerCommand('s3.deleteConnection', (item: S3TreeItem) =>
       deleteConnection(connectionManager, treeProvider, item)
@@ -53,160 +56,6 @@ function handleOpenConnection(item: S3TreeItem): void {
   });
 }
 
-async function addConnection(
-  connectionManager: ConnectionManager,
-  treeProvider: S3ExplorerProvider
-): Promise<void> {
-  const name = await vscode.window.showInputBox({
-    title: t('prompt_connName'),
-    placeHolder: t('prompt_connName_placeholder'),
-    ignoreFocusOut: true,
-  });
-  if (!name) return;
-
-  const endpoint = await vscode.window.showInputBox({
-    title: t('prompt_endpoint'),
-    placeHolder: t('prompt_endpoint_placeholder'),
-    value: 'https://',
-    ignoreFocusOut: true,
-  });
-  if (!endpoint) return;
-
-  const region = (await vscode.window.showInputBox({
-    title: t('prompt_region'),
-    value: 'us-east-1',
-    ignoreFocusOut: true,
-  })) || 'us-east-1';
-
-  const bucket = await vscode.window.showInputBox({
-    title: t('prompt_bucket'),
-    placeHolder: t('prompt_bucket_placeholder'),
-    ignoreFocusOut: true,
-  });
-  if (!bucket) return;
-
-  const forcePathStyle = (await vscode.window.showQuickPick(
-    [
-      { label: t('opt_yes'), description: t('opt_yes_desc') },
-      { label: t('opt_no'), description: t('opt_no_desc') },
-    ],
-    { title: t('prompt_forcePathStyle') }
-  ))?.label;
-  if (!forcePathStyle) return;
-
-  const accessKeyId = await vscode.window.showInputBox({
-    title: t('prompt_accessKey'),
-    placeHolder: t('prompt_accessKey_placeholder'),
-    ignoreFocusOut: true,
-  });
-  if (!accessKeyId) return;
-
-  const secretAccessKey = await vscode.window.showInputBox({
-    title: t('prompt_secretKey'),
-    placeHolder: t('prompt_secretKey_placeholder'),
-    password: true,
-    ignoreFocusOut: true,
-  });
-  if (!secretAccessKey) return;
-
-  const conn = {
-    name,
-    endpoint,
-    region,
-    bucket,
-    forcePathStyle: forcePathStyle === t('opt_yes'),
-    accessKeyId,
-    secretAccessKey,
-  };
-
-  const testClient = createClient(conn);
-  const loading = vscode.window.setStatusBarMessage('$(sync~spin) Testing connection...');
-  const testResult = await testConnection(testClient, conn.bucket);
-  loading.dispose();
-
-  if (!testResult.ok) {
-    vscode.window.showErrorMessage(t('msg_connectionFailed', testResult.error));
-    return;
-  }
-
-  connectionManager.addConnection(conn);
-  treeProvider.refresh();
-  vscode.window.showInformationMessage(t('msg_connectionSuccess'));
-}
-
-async function editConnection(
-  connectionManager: ConnectionManager,
-  treeProvider: S3ExplorerProvider,
-  item: S3TreeItem
-): Promise<void> {
-  if (!item || item.contextValue !== 's3Connection') return;
-  const conn = connectionManager.getConnection(item.connectionId);
-  if (!conn) return;
-
-  const name = await vscode.window.showInputBox({
-    title: t('prompt_connName'),
-    value: conn.name,
-    ignoreFocusOut: true,
-  });
-  if (!name) return;
-
-  const endpoint = await vscode.window.showInputBox({
-    title: t('prompt_endpoint'),
-    value: conn.endpoint,
-    ignoreFocusOut: true,
-  });
-  if (!endpoint) return;
-
-  const region = (await vscode.window.showInputBox({
-    title: t('prompt_region'),
-    value: conn.region,
-    ignoreFocusOut: true,
-  })) || 'us-east-1';
-
-  const bucket = await vscode.window.showInputBox({
-    title: t('prompt_bucket'),
-    value: conn.bucket,
-    ignoreFocusOut: true,
-  });
-  if (!bucket) return;
-
-  const forcePathLabel = conn.forcePathStyle ? t('opt_yes') : t('opt_no');
-  const forcePathStyle = (await vscode.window.showQuickPick(
-    [
-      { label: t('opt_yes'), description: t('opt_yes_desc') },
-      { label: t('opt_no'), description: t('opt_no_desc') },
-    ],
-    { title: t('prompt_forcePathStyle'), value: forcePathLabel }
-  ))?.label;
-  if (!forcePathStyle) return;
-
-  const accessKeyId = await vscode.window.showInputBox({
-    title: t('prompt_accessKey'),
-    value: conn.accessKeyId,
-    ignoreFocusOut: true,
-  });
-  if (!accessKeyId) return;
-
-  const secretAccessKey = await vscode.window.showInputBox({
-    title: t('prompt_secretKey'),
-    value: conn.secretAccessKey,
-    password: true,
-    ignoreFocusOut: true,
-  });
-  if (!secretAccessKey) return;
-
-  connectionManager.updateConnection(item.connectionId, {
-    name,
-    endpoint,
-    region,
-    bucket,
-    forcePathStyle: forcePathStyle === t('opt_yes'),
-    accessKeyId,
-    secretAccessKey,
-  });
-  treeProvider.refresh();
-}
-
 async function deleteConnection(
   connectionManager: ConnectionManager,
   treeProvider: S3ExplorerProvider,
@@ -215,15 +64,13 @@ async function deleteConnection(
   if (!item || item.contextValue !== 's3Connection') return;
   const conn = connectionManager.getConnection(item.connectionId);
   if (!conn) return;
-
   const confirmed = await vscode.window.showWarningMessage(
-    t('msg_confirmDeleteConn', conn.name),
+    t('msg_removeConfirm', conn.name),
     { modal: true },
-    t('opt_delete')
+    t('msg_removeBtn')
   );
-  if (confirmed !== t('opt_delete')) return;
-
-  connectionManager.removeConnection(item.connectionId);
+  if (confirmed !== t('msg_removeBtn')) return;
+  await connectionManager.removeConnection(item.connectionId);
   treeProvider.refresh();
 }
 
@@ -278,18 +125,6 @@ function getParentPrefix(key: string): string {
 
 function getLabel(key: string, _isFolder: boolean): string {
   const normalized = key.replace(/\/$/, '');
-  const parts = normalized.split('/');
-  return parts[parts.length - 1] || '/';
-}
-
-function formatSize(bytes?: number): string {
-  if (bytes === undefined) return '';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let size = bytes;
-  let unitIdx = 0;
-  while (size >= 1024 && unitIdx < units.length - 1) {
-    size /= 1024;
-    unitIdx++;
-  }
-  return `${size.toFixed(1)} ${units[unitIdx]}`;
+  const segments = normalized.split('/');
+  return segments[segments.length - 1] || '/';
 }
