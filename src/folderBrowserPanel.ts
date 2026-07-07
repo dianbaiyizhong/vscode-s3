@@ -417,20 +417,31 @@ export class FolderBrowserPanel {
         case 'uploadDrop': {
           const conn = this.connectionManager.getConnection(this.connectionId);
           if (!conn) return;
-          const fileName = message.fileName as string;
-          const base64 = message.content as string;
-          if (!fileName || !base64) break;
-          const key = this.prefix + fileName;
+          const files = message.files as { fileName: string; content: string }[];
+          if (!files || files.length === 0) break;
           const client = createClient(conn);
-          try {
-            await vscode.window.withProgress(
-              { location: vscode.ProgressLocation.Window, title: `Uploading ${fileName}...` },
-              async () => {
-                const buffer = Buffer.from(base64, 'base64');
-                const { PutObjectCommand } = await import('@aws-sdk/client-s3');
-                await client.send(new PutObjectCommand({ Bucket: conn.bucket, Key: key, Body: buffer }));
+          let successCount = 0;
+          let failCount = 0;
+          await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Window, title: 'Uploading...' },
+            async (progress) => {
+              for (let i = 0; i < files.length; i++) {
+                const { fileName, content } = files[i];
+                const key = this.prefix + fileName;
+                progress.report({ message: `${i + 1}/${files.length} ${fileName}`, increment: Math.round(100 / files.length) });
+                try {
+                  const buffer = Buffer.from(content, 'base64');
+                  const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+                  await client.send(new PutObjectCommand({ Bucket: conn.bucket, Key: key, Body: buffer }));
+                  successCount++;
+                } catch (err: any) {
+                  failCount++;
+                  vscode.window.showErrorMessage(`Upload failed: ${fileName} - ${err.message}`);
+                }
               }
-            );
+            }
+          );
+          if (successCount > 0) {
             this.items = [];
             this.nextToken = undefined;
             this.loading = false;
@@ -446,9 +457,11 @@ export class FolderBrowserPanel {
               await this.loadItems();
             }
             this.render();
-            vscode.window.showInformationMessage(`Uploaded ${fileName} successfully`);
-          } catch (err: any) {
-            vscode.window.showErrorMessage(`Upload failed: ${fileName} - ${err.message}`);
+          }
+          if (failCount > 0 && successCount > 0) {
+            vscode.window.showWarningMessage(`Uploaded ${successCount} file(s), ${failCount} failed`);
+          } else if (successCount > 0 && failCount === 0) {
+            vscode.window.showInformationMessage(`Uploaded ${successCount} file(s) successfully`);
           }
           break;
         }
@@ -1082,18 +1095,24 @@ document.addEventListener('drop', async e => {
   const files = Array.from(e.dataTransfer.files);
   if (files.length === 0) return;
   const maxSize = 100 * 1024 * 1024;
+  const tasks = [];
   for (const file of files) {
     if (file.size > maxSize) {
       vscodeApi.postMessage({ type: 'showError', text: 'File too large (max 100MB): ' + file.name });
       continue;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result;
-      const base64 = dataUrl.split(',')[1];
-      vscodeApi.postMessage({ type: 'uploadDrop', fileName: file.name, content: base64 });
-    };
-    reader.readAsDataURL(file);
+    tasks.push(new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result;
+        resolve({ fileName: file.name, content: dataUrl.split(',')[1] });
+      };
+      reader.readAsDataURL(file);
+    }));
+  }
+  const fileData = await Promise.all(tasks);
+  if (fileData.length > 0) {
+    vscodeApi.postMessage({ type: 'uploadDrop', files: fileData });
   }
 }, true);
 
