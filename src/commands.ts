@@ -247,9 +247,12 @@ async function handleGoToPath(
   const prefix = isDir ? targetPath : getParentPrefix(targetPath);
 
   jumpHistory.addRecord(item.connectionId, targetPath, segments[segments.length - 1], conn.name);
-  FolderBrowserPanel.create(connManager, item.connectionId, prefix, segments[segments.length - 1], (id, p) => {
+  const panel = FolderBrowserPanel.create(connManager, item.connectionId, prefix, segments[segments.length - 1], (id, p) => {
     jumpHistory.addRecord(id, p, getLabel(p, true), conn.name);
   });
+  if (!isDir) {
+    await panel.goToPath(targetPath);
+  }
 }
 
 async function handleJumpHistory(): Promise<void> {
@@ -257,9 +260,12 @@ async function handleJumpHistory(): Promise<void> {
     const conn = connManager.getConnection(record.connectionId);
     if (!conn) return;
     const prefix = record.key.endsWith('/') ? record.key : getParentPrefix(record.key);
-    FolderBrowserPanel.create(connManager, record.connectionId, prefix, getLabel(record.key, true), (id, p) => {
+    const panel = FolderBrowserPanel.create(connManager, record.connectionId, prefix, getLabel(record.key, true), (id, p) => {
       jumpHistory.addRecord(id, p, getLabel(p, true), conn.name);
-    });
+    }, true);
+    if (!record.key.endsWith('/')) {
+      await panel.goToPath(record.key);
+    }
   });
 }
 

@@ -11,10 +11,11 @@ export class FolderBrowserPanel {
     connectionId: string,
     prefix: string,
     label: string,
-    onNavigate: (connectionId: string, prefix: string) => void
-  ): void {
+    onNavigate: (connectionId: string, prefix: string) => void,
+    skipInitialLoad = false
+  ): FolderBrowserPanel {
     const column = vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.One;
-    new FolderBrowserPanel(column, connectionManager, connectionId, prefix, label, onNavigate);
+    return new FolderBrowserPanel(column, connectionManager, connectionId, prefix, label, onNavigate, skipInitialLoad);
   }
 
   private panel: vscode.WebviewPanel;
@@ -26,6 +27,7 @@ export class FolderBrowserPanel {
   private loading = false;
   private refreshing = false;
   private searchPattern?: string;
+  private singleFileKey?: string;
 
   private constructor(
     column: vscode.ViewColumn,
@@ -33,7 +35,8 @@ export class FolderBrowserPanel {
     connectionId: string,
     prefix: string,
     label: string,
-    private onNavigate: (connectionId: string, prefix: string) => void
+    private onNavigate: (connectionId: string, prefix: string) => void,
+    skipInitialLoad = false
   ) {
     this.connectionId = connectionId;
     this.prefix = prefix;
@@ -48,7 +51,11 @@ export class FolderBrowserPanel {
     );
     this.panel.iconPath = new vscode.ThemeIcon('folder-opened');
 
-    this.loadItems().then(() => this.render());
+    if (!skipInitialLoad) {
+      this.loadItems().then(() => this.render());
+    } else {
+      this.render();
+    }
 
     this.panel.webview.onDidReceiveMessage(async message => {
       switch (message.type) {
@@ -58,6 +65,7 @@ export class FolderBrowserPanel {
           break;
         case 'navigate':
           this.searchPattern = undefined;
+          this.singleFileKey = undefined;
           this.prefix = message.prefix;
           this.items = [];
           this.nextToken = undefined;
@@ -69,6 +77,7 @@ export class FolderBrowserPanel {
           break;
         case 'navigateUp': {
           this.searchPattern = undefined;
+          this.singleFileKey = undefined;
           const parent = this.getParentPrefix();
           this.prefix = parent;
           this.items = [];
@@ -81,57 +90,9 @@ export class FolderBrowserPanel {
           break;
         }
         case 'goToPath': {
-          this.searchPattern = undefined;
-          const conn = this.connectionManager.getConnection(this.connectionId);
-          if (!conn) return;
           const rawPath = message.path as string || '';
           if (!rawPath) break;
-          let newPrefix: string;
-          let targetFile: string | undefined;
-          if (rawPath === '/') {
-            newPrefix = '';
-          } else if (rawPath.endsWith('/')) {
-            newPrefix = rawPath;
-          } else {
-            const trimmed = rawPath.replace(/\/$/, '');
-            const lastSlash = trimmed.lastIndexOf('/');
-            const lastSegment = lastSlash === -1 ? trimmed : trimmed.substring(lastSlash + 1);
-            if (lastSegment.includes('.')) {
-              newPrefix = lastSlash === -1 ? '' : trimmed.substring(0, lastSlash + 1);
-              targetFile = lastSegment;
-            } else {
-              newPrefix = rawPath + '/';
-            }
-          }
-          this.prefix = newPrefix;
-          this.items = [];
-          this.nextToken = undefined;
-          this.loading = false;
-          if (targetFile) {
-            this.render();
-            const fullKey = rawPath;
-            const client = createClient(conn);
-            const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
-            try {
-              const head = await client.send(new HeadObjectCommand({ Bucket: conn.bucket, Key: fullKey }));
-              this.items = [{ key: fullKey, isFolder: false, size: head.ContentLength, lastModified: head.LastModified }];
-              this.render();
-              this.panel.webview.postMessage({ type: 'highlight', name: targetFile });
-            } catch {
-              vscode.window.showInformationMessage(`File not found: ${fullKey}`);
-              this.items = [];
-              this.nextToken = undefined;
-              this.loading = false;
-              this.render();
-              await this.loadItems();
-              this.render();
-            }
-          } else {
-            this.render();
-            await this.loadItems();
-            this.render();
-          }
-          this.onNavigate(this.connectionId, newPrefix);
+          await this.goToPath(rawPath);
           break;
         }
         case 'delete': {
@@ -152,6 +113,11 @@ export class FolderBrowserPanel {
             await deleteObject(client, conn.bucket, item.key);
           }
           this.items = this.items.filter(i => i.key !== item.key);
+          if (this.singleFileKey === item.key) {
+            this.singleFileKey = undefined;
+            this.nextToken = undefined;
+            await this.loadItems();
+          }
           this.render();
           break;
         }
@@ -218,6 +184,7 @@ export class FolderBrowserPanel {
           );
           this.items = [];
           this.nextToken = undefined;
+          this.singleFileKey = undefined;
           this.loading = false;
           await this.loadItems();
           this.render();
@@ -247,14 +214,38 @@ export class FolderBrowserPanel {
         case 'refresh':
           this.searchPattern = undefined;
           this.refreshing = true;
-          this.items = [];
-          this.nextToken = undefined;
           this.loading = false;
-          this.render();
-          await vscode.window.withProgress(
-            { location: vscode.ProgressLocation.Window, title: 'Refreshing...' },
-            () => this.loadItems()
-          );
+          if (this.singleFileKey) {
+            this.render();
+            await vscode.window.withProgress(
+              { location: vscode.ProgressLocation.Window, title: 'Refreshing...' },
+              async () => {
+                const conn = this.connectionManager.getConnection(this.connectionId);
+                if (!conn) return;
+                const client = createClient(conn);
+                const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+                try {
+                  const head = await client.send(new HeadObjectCommand({ Bucket: conn.bucket, Key: this.singleFileKey! }));
+                  this.items = [{ key: this.singleFileKey!, isFolder: false, size: head.ContentLength, lastModified: head.LastModified }];
+                } catch {
+                  vscode.window.showInformationMessage(`File no longer exists: ${this.singleFileKey}`);
+                  this.singleFileKey = undefined;
+                  this.items = [];
+                  this.nextToken = undefined;
+                  this.prefix = this.prefix || '';
+                  await this.loadItems();
+                }
+              }
+            );
+          } else {
+            this.items = [];
+            this.nextToken = undefined;
+            this.render();
+            await vscode.window.withProgress(
+              { location: vscode.ProgressLocation.Window, title: 'Refreshing...' },
+              () => this.loadItems()
+            );
+          }
           this.refreshing = false;
           this.render();
           break;
@@ -290,7 +281,18 @@ export class FolderBrowserPanel {
             this.items = [];
             this.nextToken = undefined;
             this.loading = false;
-            await this.loadItems();
+            if (this.singleFileKey) {
+              const client = createClient(conn);
+              const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+              try {
+                const head = await client.send(new HeadObjectCommand({ Bucket: conn.bucket, Key: this.singleFileKey }));
+                this.items = [{ key: this.singleFileKey, isFolder: false, size: head.ContentLength, lastModified: head.LastModified }];
+              } catch {
+                this.singleFileKey = undefined;
+              }
+            } else {
+              await this.loadItems();
+            }
             this.render();
           }
           if (failCount > 0 && successCount > 0) {
@@ -309,6 +311,7 @@ export class FolderBrowserPanel {
             const lastSlash = trimmed.lastIndexOf('/');
             const lastSegment = lastSlash === -1 ? pattern : trimmed.substring(lastSlash + 1);
             if (pattern.endsWith('/') || !lastSegment.includes('.')) {
+              this.singleFileKey = undefined;
               this.prefix = pattern.endsWith('/') ? pattern : pattern + '/';
               this.items = [];
               this.nextToken = undefined;
@@ -317,6 +320,7 @@ export class FolderBrowserPanel {
               await this.loadItems();
               this.render();
             } else {
+              this.singleFileKey = undefined;
               this.prefix = lastSlash === -1 ? '' : trimmed.substring(0, lastSlash + 1);
               this.items = [];
               this.nextToken = undefined;
@@ -327,21 +331,24 @@ export class FolderBrowserPanel {
               const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
               try {
                 const head = await client.send(new HeadObjectCommand({ Bucket: conn.bucket, Key: fullKey }));
+                this.singleFileKey = fullKey;
                 this.items = [{ key: fullKey, isFolder: false, size: head.ContentLength, lastModified: head.LastModified }];
                 this.render();
                 this.panel.webview.postMessage({ type: 'highlight', name: lastSegment });
               } catch {
                 vscode.window.showInformationMessage(`File not found: ${fullKey}`);
                 this.prefix = this.prefix || '';
-                this.items = [];
-                this.nextToken = undefined;
-                this.loading = false;
+            this.items = [];
+            this.nextToken = undefined;
+            this.singleFileKey = undefined;
+            this.loading = false;
                 this.render();
                 await this.loadItems();
                 this.render();
               }
             }
           } else {
+            this.singleFileKey = undefined;
             this.searchPattern = pattern;
             this.items = [];
             this.nextToken = undefined;
@@ -382,7 +389,17 @@ export class FolderBrowserPanel {
             this.items = [];
             this.nextToken = undefined;
             this.loading = false;
-            await this.loadItems();
+            if (this.singleFileKey) {
+              const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+              try {
+                const head = await client.send(new HeadObjectCommand({ Bucket: conn.bucket, Key: this.singleFileKey }));
+                this.items = [{ key: this.singleFileKey, isFolder: false, size: head.ContentLength, lastModified: head.LastModified }];
+              } catch {
+                this.singleFileKey = undefined;
+              }
+            } else {
+              await this.loadItems();
+            }
             this.render();
             vscode.window.showInformationMessage(`Uploaded ${fileName} successfully`);
           } catch (err: any) {
@@ -392,6 +409,62 @@ export class FolderBrowserPanel {
         }
       }
     });
+  }
+
+  public async goToPath(rawPath: string): Promise<void> {
+    this.searchPattern = undefined;
+    const conn = this.connectionManager.getConnection(this.connectionId);
+    if (!conn) return;
+    if (!rawPath) return;
+    let newPrefix: string;
+    let targetFile: string | undefined;
+    if (rawPath === '/') {
+      newPrefix = '';
+    } else if (rawPath.endsWith('/')) {
+      newPrefix = rawPath;
+    } else {
+      const trimmed = rawPath.replace(/\/$/, '');
+      const lastSlash = trimmed.lastIndexOf('/');
+      const lastSegment = lastSlash === -1 ? trimmed : trimmed.substring(lastSlash + 1);
+      if (lastSegment.includes('.')) {
+        newPrefix = lastSlash === -1 ? '' : trimmed.substring(0, lastSlash + 1);
+        targetFile = lastSegment;
+      } else {
+        newPrefix = rawPath + '/';
+      }
+    }
+    this.prefix = newPrefix;
+    this.items = [];
+    this.nextToken = undefined;
+    this.loading = false;
+    if (targetFile) {
+      this.singleFileKey = undefined;
+      this.render();
+      const fullKey = rawPath;
+      const client = createClient(conn);
+      const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+      try {
+        const head = await client.send(new HeadObjectCommand({ Bucket: conn.bucket, Key: fullKey }));
+        this.singleFileKey = fullKey;
+        this.items = [{ key: fullKey, isFolder: false, size: head.ContentLength, lastModified: head.LastModified }];
+        this.render();
+        this.panel.webview.postMessage({ type: 'highlight', name: targetFile });
+      } catch {
+        vscode.window.showInformationMessage(`File not found: ${fullKey}`);
+        this.items = [];
+        this.nextToken = undefined;
+        this.loading = false;
+        this.render();
+        await this.loadItems();
+        this.render();
+      }
+    } else {
+      this.singleFileKey = undefined;
+      this.render();
+      await this.loadItems();
+      this.render();
+    }
+    this.onNavigate(this.connectionId, targetFile ? rawPath : newPrefix);
   }
 
   private getParentPrefix(): string {
@@ -447,9 +520,10 @@ export class FolderBrowserPanel {
   }
 
   private render(): void {
-    this.panel.title = `${this.searchPattern ? '🔍 ' + this.searchPattern : this.prefix || '/'} — ${this.connectionName}`;
+    const displayPath = this.singleFileKey || this.prefix || '/';
+    this.panel.title = `${this.searchPattern ? '🔍 ' + this.searchPattern : displayPath} — ${this.connectionName}`;
     this.panel.webview.html = getHtml(
-      this.prefix,
+      displayPath,
       this.items,
       this.nextToken !== undefined,
       this.loading || this.refreshing,
