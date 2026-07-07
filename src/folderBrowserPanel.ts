@@ -196,6 +196,51 @@ export class FolderBrowserPanel {
           vscode.window.setStatusBarMessage(`$(link) Copied: ${item.key}`, 3000);
           break;
         }
+        case 'info': {
+          const conn = this.connectionManager.getConnection(this.connectionId);
+          if (!conn) return;
+          const item = message.item as S3ObjectInfo;
+          const client = createClient(conn);
+          const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+          const items: { label: string; value: string }[] = [
+            { label: 'Key', value: item.key },
+            { label: 'Type', value: item.isFolder ? 'Folder' : 'File' },
+            { label: 'Size', value: item.size != null ? formatSize(item.size) : '-' },
+            { label: 'Last Modified', value: item.lastModified ? new Date(item.lastModified).toISOString() : '-' },
+          ];
+          try {
+            const head = await client.send(new HeadObjectCommand({ Bucket: conn.bucket, Key: item.key }));
+            if (head.ETag) items.push({ label: 'ETag', value: head.ETag.replace(/"/g, '') });
+            if (head.ContentType) items.push({ label: 'Content-Type', value: head.ContentType });
+            if (head.ContentEncoding) items.push({ label: 'Content-Encoding', value: head.ContentEncoding });
+            if (head.StorageClass) items.push({ label: 'Storage Class', value: head.StorageClass });
+            if (head.VersionId) items.push({ label: 'Version ID', value: head.VersionId });
+            if (head.ContentDisposition) items.push({ label: 'Content-Disposition', value: head.ContentDisposition });
+            if (head.CacheControl) items.push({ label: 'Cache-Control', value: head.CacheControl });
+            if (head.ServerSideEncryption) items.push({ label: 'Encryption', value: head.ServerSideEncryption });
+            if (head.SSEKMSKeyId) items.push({ label: 'KMS Key ID', value: head.SSEKMSKeyId });
+            if (head.WebsiteRedirectLocation) items.push({ label: 'Website Redirect', value: head.WebsiteRedirectLocation });
+            if (head.Metadata && Object.keys(head.Metadata).length > 0) {
+              for (const [k, v] of Object.entries(head.Metadata)) {
+                items.push({ label: `Metadata: ${k}`, value: v || '' });
+              }
+            }
+          } catch { /* use basic info */ }
+          const picks = items.map(i => ({
+            label: i.label,
+            description: i.value,
+          }));
+          const pick = await vscode.window.showQuickPick(picks, {
+            title: `Info: ${item.key}`,
+            placeHolder: 'Click to copy value',
+            matchOnDescription: true,
+          });
+          if (pick) {
+            vscode.env.clipboard.writeText(pick.description || '');
+            vscode.window.setStatusBarMessage(`$(link) Copied: ${pick.description}`, 2000);
+          }
+          break;
+        }
         case 'download': {
           const conn = this.connectionManager.getConnection(this.connectionId);
           if (!conn) return;
@@ -569,6 +614,7 @@ function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loadin
       <span class="item-meta"></span>
       <span class="item-date"></span>
       <span class="item-actions">
+        <span class="action" data-action="info" title="${t('wv_info')}">&#x2139;</span>
         <span class="action" data-action="rename" title="${t('wv_rename')}">&#x270F;</span>
         <span class="action" data-action="delete" title="${t('wv_delete')}">&#x1F5D1;</span>
         <span class="action" data-action="copyPath" title="${t('wv_copyPath')}">&#x1F4CB;</span>
@@ -586,6 +632,7 @@ function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loadin
       <span class="item-meta">${formatSize(i.size)}</span>
       <span class="item-date">${i.lastModified ? formatDate(new Date(i.lastModified)) : ''}</span>
       <span class="item-actions">
+        <span class="action" data-action="info" title="${t('wv_info')}">&#x2139;</span>
         <span class="action" data-action="rename" title="${t('wv_rename')}">&#x270F;</span>
         <span class="action" data-action="download" title="${t('wv_download')}">&#x2B07;</span>
         <span class="action" data-action="delete" title="${t('wv_delete')}">&#x1F5D1;</span>
@@ -856,6 +903,7 @@ const l10n = ${JSON.stringify({
     download: t('wv_download'),
     delete: t('wv_delete'),
     copyPath: t('wv_copyPath'),
+    info: t('wv_info'),
     selected: t('wv_selected'),
   })};
 
@@ -991,6 +1039,7 @@ document.addEventListener('contextmenu', e => {
     div.addEventListener('click', () => { ctxMenu.classList.remove('show'); vscodeApi.postMessage({ type: action, item }); });
     ctxMenu.appendChild(div);
   };
+  addItem('ℹ ' + l10n.info, 'info');
   addItem('✏ ' + l10n.rename, 'rename');
   if (isFile) addItem('⬇ ' + l10n.download, 'download');
   addItem('🗑 ' + l10n.delete, 'delete');
@@ -1109,6 +1158,7 @@ filterInput?.addEventListener('keydown', e => {
   }
 });
 document.getElementById('pathInput')?.addEventListener('keydown', e => {
+  if (e.isComposing) return;
   if (e.key === 'Enter') {
     e.preventDefault();
     vscodeApi.postMessage({ type: 'goToPath', path: e.target.value });

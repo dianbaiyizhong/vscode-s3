@@ -154,6 +154,7 @@ const en: Record<string, string> = {
   wv_download: 'Download',
   wv_delete: 'Delete',
   wv_copyPath: 'Copy Path',
+  wv_info: 'Info',
 
   // settings panel
   wv_settings_title: 'S3 Settings',
@@ -317,6 +318,7 @@ const zh: Record<string, string> = {
   wv_download: '下载',
   wv_delete: '删除',
   wv_copyPath: '复制路径',
+  wv_info: '详情',
 
   // settings panel
   wv_settings_title: 'S3 设置',
