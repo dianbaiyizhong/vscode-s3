@@ -107,11 +107,29 @@ export class FolderBrowserPanel {
           this.items = [];
           this.nextToken = undefined;
           this.loading = false;
-          this.render();
-          await this.loadItems();
-          this.render();
           if (targetFile) {
-            this.panel.webview.postMessage({ type: 'highlight', name: targetFile });
+            this.render();
+            const fullKey = rawPath;
+            const client = createClient(conn);
+            const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+            try {
+              const head = await client.send(new HeadObjectCommand({ Bucket: conn.bucket, Key: fullKey }));
+              this.items = [{ key: fullKey, isFolder: false, size: head.ContentLength, lastModified: head.LastModified }];
+              this.render();
+              this.panel.webview.postMessage({ type: 'highlight', name: targetFile });
+            } catch {
+              vscode.window.showInformationMessage(`File not found: ${fullKey}`);
+              this.items = [];
+              this.nextToken = undefined;
+              this.loading = false;
+              this.render();
+              await this.loadItems();
+              this.render();
+            }
+          } else {
+            this.render();
+            await this.loadItems();
+            this.render();
           }
           this.onNavigate(this.connectionId, newPrefix);
           break;
@@ -304,37 +322,16 @@ export class FolderBrowserPanel {
               this.nextToken = undefined;
               this.loading = false;
               this.render();
-              await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: `Finding ${lastSegment}...` },
-                async () => {
-                  const conn = this.connectionManager.getConnection(this.connectionId);
-                  if (!conn) return;
-                  const client = createClient(conn);
-                  const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
-                  let token: string | undefined;
-                  while (true) {
-                    const response = await client.send(new ListObjectsV2Command({
-                      Bucket: conn.bucket, Prefix: this.prefix, Delimiter: '/', MaxKeys: 200, ContinuationToken: token,
-                    }));
-                    const found = (response.Contents || []).find(o => {
-                      const name = o.Key?.replace(/\/$/, '').split('/').pop();
-                      return name === lastSegment;
-                    });
-                    if (found) {
-                      this.items = [{ key: found.Key!, isFolder: false, size: found.Size, lastModified: found.LastModified }];
-                      return;
-                    }
-                    if (!response.IsTruncated) break;
-                    token = response.NextContinuationToken;
-                  }
-                  this.items = [];
-                }
-              );
-              if (this.items.length > 0) {
+              const fullKey = pattern;
+              const client = createClient(conn);
+              const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+              try {
+                const head = await client.send(new HeadObjectCommand({ Bucket: conn.bucket, Key: fullKey }));
+                this.items = [{ key: fullKey, isFolder: false, size: head.ContentLength, lastModified: head.LastModified }];
                 this.render();
                 this.panel.webview.postMessage({ type: 'highlight', name: lastSegment });
-              } else {
-                vscode.window.showInformationMessage(`File "${lastSegment}" not found in ${this.prefix || '/'}`);
+              } catch {
+                vscode.window.showInformationMessage(`File not found: ${fullKey}`);
                 this.prefix = this.prefix || '';
                 this.items = [];
                 this.nextToken = undefined;
