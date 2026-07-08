@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 import { createClient, listObjects, uploadFile, downloadFile, deleteObject, deleteFolder, renameObject, renameFolder, S3ObjectInfo } from './s3Client';
 import { ConnectionManager } from './connectionManager';
 import { JumpRecord } from './jumpHistory';
@@ -31,6 +32,9 @@ export class FolderBrowserPanel {
   private refreshing = false;
   private searchPattern?: string;
   private singleFileKey?: string;
+  private static folderIcon: string = '';
+  private static fileIcon: string = '';
+  private static extIcons: Record<string, string> = {};
 
   private constructor(
     column: vscode.ViewColumn,
@@ -47,6 +51,21 @@ export class FolderBrowserPanel {
     this.getHistoryRecords = getHistoryRecords;
     const conn = connectionManager.getConnection(connectionId);
     this.connectionName = conn?.name || label;
+
+    if (!FolderBrowserPanel.folderIcon) {
+      const extPath = vscode.extensions.getExtension('nntk.vscode-s3')?.extensionPath;
+      if (extPath) {
+        FolderBrowserPanel.folderIcon = fs.readFileSync(path.join(extPath, 'resources', 'folder.svg'), 'utf-8');
+        FolderBrowserPanel.fileIcon = fs.readFileSync(path.join(extPath, 'resources', 'file.svg'), 'utf-8');
+        const iconsDir = path.join(extPath, 'resources', 'file-icons');
+        if (fs.existsSync(iconsDir)) {
+          for (const f of fs.readdirSync(iconsDir)) {
+            const ext = path.parse(f).name.toLowerCase();
+            FolderBrowserPanel.extIcons[ext] = fs.readFileSync(path.join(iconsDir, f), 'utf-8');
+          }
+        }
+      }
+    }
 
     const initPath = (prefix || '/').length > 15 ? '…' + (prefix || '/').slice(-15) : (prefix || '/');
     this.panel = vscode.window.createWebviewPanel(
@@ -608,7 +627,10 @@ export class FolderBrowserPanel {
       this.refreshing,
       this.searchPattern,
       records,
-      this.connectionId
+      this.connectionId,
+      FolderBrowserPanel.folderIcon,
+      FolderBrowserPanel.fileIcon,
+      FolderBrowserPanel.extIcons,
     );
   }
 }
@@ -636,7 +658,7 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loading: boolean, refreshing: boolean = false, searchPattern?: string, historyRecords?: JumpRecord[], connectionId?: string): string {
+function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loading: boolean, refreshing: boolean = false, searchPattern?: string, historyRecords?: JumpRecord[], connectionId?: string, folderSvg?: string, fileSvg?: string, extIcons?: Record<string, string>): string {
   const headerRow = `<div class="list-header">
     <span></span>
     <span></span>
@@ -646,12 +668,14 @@ function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loadin
     <span>${t('wv_actions')}</span>
   </div>`;
 
+  const folderIconSvg = folderSvg || '&#x1F4C1;';
+  const fileIconSvg = fileSvg || '&#x1F4C4;';
   const folderRows = items.filter(i => i.isFolder).map(i => {
     const name = i.key.replace(/\/$/, '').split('/').pop() || '';
     const data = JSON.stringify(i).replace(/"/g, '&quot;');
     return `<div class="item folder" data-item="${data}">
       <input type="checkbox" class="item-cb">
-      <span class="item-icon">&#x1F4C1;</span>
+      <span class="item-icon">${folderIconSvg}</span>
       <span class="item-name">${escapeHtml(name)}</span>
       <span class="item-meta"></span>
       <span class="item-date"></span>
@@ -666,10 +690,12 @@ function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loadin
 
   const fileRows = items.filter(i => !i.isFolder).map(i => {
     const name = i.key.split('/').pop() || i.key;
+    const ext = name.includes('.') ? name.split('.').pop()!.toLowerCase() : '';
+    const icon = ext && extIcons && extIcons[ext] ? extIcons[ext] : fileIconSvg;
     const data = JSON.stringify(i).replace(/"/g, '&quot;');
     return `<div class="item file" data-item="${data}">
       <input type="checkbox" class="item-cb">
-      <span class="item-icon">&#x1F4C4;</span>
+      <span class="item-icon">${icon}</span>
       <span class="item-name">${escapeHtml(name)}</span>
       <span class="item-meta">${formatSize(i.size)}</span>
       <span class="item-date">${i.lastModified ? formatDate(new Date(i.lastModified)) : ''}</span>
@@ -847,7 +873,7 @@ body {
   cursor: pointer;
   accent-color: var(--vscode-focusBorder);
 }
-.item-icon { font-size: 15px; text-align: center; }
+.item-icon { font-size: 15px; text-align: center; display: flex; align-items: center; justify-content: center; height: 100%; }
 .item-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item-meta { font-size: 11px; color: var(--vscode-descriptionForeground); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .item-date { font-size: 11px; color: var(--vscode-descriptionForeground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1291,7 +1317,7 @@ function renderDropdown(results) {
 
 function filterHistory(query) {
   const q = query.toLowerCase();
-  return dedupedRecords.filter(r => r.key.toLowerCase().includes(q));
+  return dedupedRecords.filter(r => r.connectionId === currentConnectionId && r.key.toLowerCase().includes(q));
 }
 
 function selectHistoryItem(idx) {
