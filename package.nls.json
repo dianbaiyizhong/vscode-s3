@@ -18,6 +18,5 @@
   "cmd.searchFiles": "Search files...",
   "cmd.goToPath": "Go to Path...",
   "cmd.getInfo": "Get Info",
-  "cmd.jumpHistory": "Jump History...",
   "cmd.openConnection": "Open Connection"
 }

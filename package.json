@@ -18,7 +18,6 @@
     "onCommand:s3.openSettings",
     "onCommand:s3.refresh",
     "onCommand:s3.goToPath",
-    "onCommand:s3.jumpHistory",
     "onCommand:s3.openConnection"
   ],
   "main": "./dist/extension.js",
@@ -72,11 +71,6 @@
         "icon": "$(arrow-right)"
       },
       {
-        "command": "s3.jumpHistory",
-        "title": "%cmd.jumpHistory%",
-        "icon": "$(history)"
-      },
-      {
         "command": "s3.openConnection",
         "title": "%cmd.openConnection%",
         "icon": "$(folder-opened)"
@@ -96,11 +90,6 @@
         },
         {
           "command": "s3.refresh",
-          "when": "view == s3Explorer",
-          "group": "navigation"
-        },
-        {
-          "command": "s3.jumpHistory",
           "when": "view == s3Explorer",
           "group": "navigation"
         }

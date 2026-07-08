@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { createClient, listObjects, uploadFile, downloadFile, deleteObject, deleteFolder, renameObject, renameFolder, S3ObjectInfo } from './s3Client';
 import { ConnectionManager } from './connectionManager';
+import { JumpRecord } from './jumpHistory';
 import { t } from './i18n';
 
 export class FolderBrowserPanel {
@@ -12,16 +13,18 @@ export class FolderBrowserPanel {
     prefix: string,
     label: string,
     onNavigate: (connectionId: string, prefix: string) => void,
+    getHistoryRecords?: () => JumpRecord[],
     skipInitialLoad = false
   ): FolderBrowserPanel {
     const column = vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.One;
-    return new FolderBrowserPanel(column, connectionManager, connectionId, prefix, label, onNavigate, skipInitialLoad);
+    return new FolderBrowserPanel(column, connectionManager, connectionId, prefix, label, onNavigate, getHistoryRecords, skipInitialLoad);
   }
 
   private panel: vscode.WebviewPanel;
   private connectionId: string;
   private prefix: string;
   private connectionName: string;
+  private getHistoryRecords: (() => JumpRecord[]) | undefined;
   private items: S3ObjectInfo[] = [];
   private nextToken?: string;
   private loading = false;
@@ -36,10 +39,12 @@ export class FolderBrowserPanel {
     prefix: string,
     label: string,
     private onNavigate: (connectionId: string, prefix: string) => void,
+    getHistoryRecords?: () => JumpRecord[],
     skipInitialLoad = false
   ) {
     this.connectionId = connectionId;
     this.prefix = prefix;
+    this.getHistoryRecords = getHistoryRecords;
     const conn = connectionManager.getConnection(connectionId);
     this.connectionName = conn?.name || label;
 
@@ -71,9 +76,9 @@ export class FolderBrowserPanel {
           this.nextToken = undefined;
           this.loading = false;
           this.render();
+          this.onNavigate(this.connectionId, message.prefix);
           await this.loadItems();
           this.render();
-          this.onNavigate(this.connectionId, message.prefix);
           break;
         case 'navigateUp': {
           this.searchPattern = undefined;
@@ -84,15 +89,28 @@ export class FolderBrowserPanel {
           this.nextToken = undefined;
           this.loading = false;
           this.render();
+          this.onNavigate(this.connectionId, parent);
           await this.loadItems();
           this.render();
-          this.onNavigate(this.connectionId, parent);
           break;
         }
         case 'goToPath': {
           const rawPath = message.path as string || '';
           if (!rawPath) break;
           await this.goToPath(rawPath);
+          break;
+        }
+        case 'historyJump': {
+          const conn = this.connectionManager.getConnection(message.connectionId as string);
+          if (!conn) { vscode.window.showErrorMessage('Connection not found'); break; }
+          const key = message.key as string;
+          const prefix = key.endsWith('/') ? key : getParentPrefixDir(key);
+          const label = key.replace(/\/$/, '').split('/').pop() || '/';
+          const panel = FolderBrowserPanel.create(
+            this.connectionManager, message.connectionId as string, prefix, label,
+            this.onNavigate, this.getHistoryRecords, true
+          );
+          if (!key.endsWith('/')) panel.goToPath(key);
           break;
         }
         case 'delete': {
@@ -495,6 +513,7 @@ export class FolderBrowserPanel {
     this.items = [];
     this.nextToken = undefined;
     this.loading = false;
+    this.onNavigate(this.connectionId, targetFile ? rawPath : newPrefix);
     if (targetFile) {
       this.singleFileKey = undefined;
       this.render();
@@ -522,7 +541,6 @@ export class FolderBrowserPanel {
       await this.loadItems();
       this.render();
     }
-    this.onNavigate(this.connectionId, targetFile ? rawPath : newPrefix);
   }
 
   private getParentPrefix(): string {
@@ -580,15 +598,25 @@ export class FolderBrowserPanel {
   private render(): void {
     const displayPath = this.singleFileKey || this.prefix || '/';
     this.panel.title = `${this.searchPattern ? '🔍 ' + this.searchPattern : displayPath} — ${this.connectionName}`;
+    const records = this.getHistoryRecords?.() || [];
     this.panel.webview.html = getHtml(
       displayPath,
       this.items,
       this.nextToken !== undefined,
       this.loading || this.refreshing,
       this.refreshing,
-      this.searchPattern
+      this.searchPattern,
+      records,
+      this.connectionId
     );
   }
+}
+
+function getParentPrefixDir(key: string): string {
+  const normalized = key.replace(/\/$/, '');
+  const lastSlash = normalized.lastIndexOf('/');
+  if (lastSlash === -1) return '';
+  return normalized.substring(0, lastSlash + 1);
 }
 
 function formatSize(bytes?: number): string {
@@ -607,7 +635,7 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loading: boolean, refreshing: boolean = false, searchPattern?: string): string {
+function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loading: boolean, refreshing: boolean = false, searchPattern?: string, historyRecords?: JumpRecord[], connectionId?: string): string {
   const headerRow = `<div class="list-header">
     <span></span>
     <span></span>
@@ -889,6 +917,52 @@ body {
   margin: 4px 8px;
   background: var(--vscode-menu-separatorBackground);
 }
+.history-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--vscode-dropdown-background, var(--vscode-menu-background));
+  border: 1px solid var(--vscode-dropdown-border, var(--vscode-menu-border));
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  margin-top: 2px;
+}
+.history-dropdown.show { display: block; }
+.history-item {
+  padding: 7px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--vscode-dropdown-border, transparent);
+}
+.history-item:last-child { border-bottom: none; }
+.history-item:hover,
+.history-item.active {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+.history-item .hi-path {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.history-item .hi-conn {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.history-item:hover .hi-conn,
+.history-item.active .hi-conn {
+  opacity: 0.9;
+}
+.header { position: relative; }
 </style>
 </head>
 <body>
@@ -898,6 +972,7 @@ body {
   <input class="path-input" id="pathInput" value="${escapeHtml(prefix || '/')}" title="Enter path and press Enter to navigate">
   <button class="action-btn" id="refreshBtn" ${refreshing ? 'disabled' : ''}>${t('wv_refresh')}</button>
   <button class="action-btn" id="uploadBtn">${t('wv_upload')}</button>
+  <div class="history-dropdown" id="historyDropdown"></div>
 </div>
 <div class="sel-bar" id="selBar">
   <span class="count" id="selCount" data-format="${t('wv_selected')}">${t('wv_selected', '0')}</span>
@@ -1176,13 +1251,116 @@ filterInput?.addEventListener('keydown', e => {
     }
   }
 });
-document.getElementById('pathInput')?.addEventListener('keydown', e => {
+// --- jump history autocomplete ---
+const historyRecords = ${JSON.stringify(historyRecords || [])};
+const currentConnectionId = ${JSON.stringify(connectionId || '')};
+
+// deduplicate by connectionId+key (keep most recent), then sort by time desc
+const seen = new Map();
+historyRecords.forEach(r => {
+  const key = r.connectionId + '\\x00' + r.key;
+  const existing = seen.get(key);
+  if (!existing || r.timestamp > existing.timestamp) seen.set(key, r);
+});
+const dedupedRecords = Array.from(seen.values()).sort((a, b) => b.timestamp - a.timestamp);
+
+const pathInput = document.getElementById('pathInput');
+const dropdown = document.getElementById('historyDropdown');
+let activeIdx = -1;
+let debounceTimer = null;
+
+function closeDropdown() {
+  dropdown.classList.remove('show');
+  dropdown.innerHTML = '';
+  activeIdx = -1;
+}
+
+function renderDropdown(results) {
+  if (results.length === 0) { closeDropdown(); return; }
+  dropdown.innerHTML = results.map((r, i) =>
+    '<div class="history-item' + (i === activeIdx ? ' active' : '') + '" data-idx="' + i + '">' +
+      '<div class="hi-path">' + escapeHtml(r.key) + '</div>' +
+      '<div class="hi-conn">' + escapeHtml(r.connectionName) + '</div>' +
+    '</div>'
+  ).join('');
+  dropdown.classList.add('show');
+  const el = dropdown.querySelector('.history-item.active');
+  if (el) el.scrollIntoView({ block: 'nearest' });
+}
+
+function filterHistory(query) {
+  const q = query.toLowerCase();
+  return dedupedRecords.filter(r => r.key.toLowerCase().includes(q));
+}
+
+function selectHistoryItem(idx) {
+  const results = filterHistory(pathInput.value);
+  if (idx < 0 || idx >= results.length) return;
+  const r = results[idx];
+  closeDropdown();
+  pathInput.value = r.key;
+  if (r.connectionId === currentConnectionId) {
+    vscodeApi.postMessage({ type: 'goToPath', path: r.key });
+  } else {
+    vscodeApi.postMessage({ type: 'historyJump', connectionId: r.connectionId, key: r.key });
+  }
+}
+
+pathInput?.addEventListener('input', () => {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    const results = filterHistory(pathInput.value);
+    renderDropdown(results);
+  }, 100);
+});
+
+pathInput?.addEventListener('focus', () => {
+  const results = filterHistory(pathInput.value);
+  renderDropdown(results);
+});
+
+pathInput?.addEventListener('blur', () => {
+  setTimeout(closeDropdown, 150);
+});
+
+pathInput?.addEventListener('keydown', e => {
   if (e.isComposing) return;
-  if (e.key === 'Enter') {
+  const results = filterHistory(pathInput.value);
+  if (e.key === 'ArrowDown') {
     e.preventDefault();
-    vscodeApi.postMessage({ type: 'goToPath', path: e.target.value });
+    activeIdx = Math.min(activeIdx + 1, results.length - 1);
+    renderDropdown(results);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    activeIdx = Math.max(activeIdx - 1, -1);
+    renderDropdown(results);
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (activeIdx >= 0 && activeIdx < results.length) {
+      selectHistoryItem(activeIdx);
+    } else {
+      closeDropdown();
+      vscodeApi.postMessage({ type: 'goToPath', path: pathInput.value });
+    }
+  } else if (e.key === 'Escape') {
+    closeDropdown();
   }
 });
+
+dropdown?.addEventListener('mousedown', e => {
+  const item = e.target.closest('.history-item');
+  if (!item) return;
+  e.preventDefault();
+  const idx = parseInt(item.dataset.idx);
+  selectHistoryItem(idx);
+});
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.appendChild(document.createTextNode(text));
+  return div.innerHTML;
+}
+// --- end jump history autocomplete ---
 document.getElementById('refreshBtn')?.addEventListener('click', () => {
   vscodeApi.postMessage({ type: 'refresh' });
 });

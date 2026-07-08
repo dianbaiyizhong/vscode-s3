@@ -3,7 +3,6 @@ import { ConnectionManager } from './connectionManager';
 import { S3ExplorerProvider, S3TreeItem } from './treeView';
 import { t } from './i18n';
 import { JumpHistory } from './jumpHistory';
-import { JumpHistoryPanel } from './jumpHistoryPanel';
 import { FolderBrowserPanel } from './folderBrowserPanel';
 import { SettingsPanel } from './settingsPanel';
 
@@ -40,9 +39,6 @@ export function registerCommands(
     ),
     vscode.commands.registerCommand('s3.goToPath', (item: S3TreeItem) =>
       handleGoToPath(connectionManager, item)
-    ),
-    vscode.commands.registerCommand('s3.jumpHistory', () =>
-      handleJumpHistory()
     )
   );
 }
@@ -51,9 +47,11 @@ function handleOpenConnection(item: S3TreeItem): void {
   if (!item || item.contextValue !== 's3Connection') return;
   const conn = connManager.getConnection(item.connectionId);
   if (!conn) return;
-  FolderBrowserPanel.create(connManager, item.connectionId, '', conn.name, (id, prefix) => {
-    jumpHistory.addRecord(id, prefix, getLabel(prefix, true), conn.name);
-  });
+  FolderBrowserPanel.create(
+    connManager, item.connectionId, '', conn.name,
+    (id, prefix) => { jumpHistory.addRecord(id, prefix, getLabel(prefix, true), conn.name); },
+    () => jumpHistory.getRecords()
+  );
 }
 
 async function deleteConnection(
@@ -94,26 +92,14 @@ async function handleGoToPath(
   const prefix = isDir ? targetPath : getParentPrefix(targetPath);
 
   jumpHistory.addRecord(item.connectionId, targetPath, segments[segments.length - 1], conn.name);
-  const panel = FolderBrowserPanel.create(connManager, item.connectionId, prefix, segments[segments.length - 1], (id, p) => {
-    jumpHistory.addRecord(id, p, getLabel(p, true), conn.name);
-  });
+  const panel = FolderBrowserPanel.create(
+    connManager, item.connectionId, prefix, segments[segments.length - 1],
+    (id, p) => { jumpHistory.addRecord(id, p, getLabel(p, true), conn.name); },
+    () => jumpHistory.getRecords()
+  );
   if (!isDir) {
     await panel.goToPath(targetPath);
   }
-}
-
-async function handleJumpHistory(): Promise<void> {
-  JumpHistoryPanel.createOrShow(jumpHistory, async (record) => {
-    const conn = connManager.getConnection(record.connectionId);
-    if (!conn) return;
-    const prefix = record.key.endsWith('/') ? record.key : getParentPrefix(record.key);
-    const panel = FolderBrowserPanel.create(connManager, record.connectionId, prefix, getLabel(record.key, true), (id, p) => {
-      jumpHistory.addRecord(id, p, getLabel(p, true), conn.name);
-    }, true);
-    if (!record.key.endsWith('/')) {
-      await panel.goToPath(record.key);
-    }
-  });
 }
 
 function getParentPrefix(key: string): string {
