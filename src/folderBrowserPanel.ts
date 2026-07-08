@@ -48,13 +48,14 @@ export class FolderBrowserPanel {
     const conn = connectionManager.getConnection(connectionId);
     this.connectionName = conn?.name || label;
 
+    const initPath = (prefix || '/').length > 15 ? '…' + (prefix || '/').slice(-15) : (prefix || '/');
     this.panel = vscode.window.createWebviewPanel(
       'folderBrowser',
       `${prefix || '/'} — ${this.connectionName}`,
       column,
       { enableScripts: true }
     );
-    this.panel.iconPath = new vscode.ThemeIcon('folder-opened');
+    this.panel.iconPath = new vscode.ThemeIcon('window');
 
     if (!skipInitialLoad) {
       this.loadItems().then(() => this.render());
@@ -559,7 +560,7 @@ export class FolderBrowserPanel {
       if (!conn) return;
 
       const client = createClient(conn);
-      const result = await listObjects(client, conn.bucket, this.prefix, 1, undefined, this.nextToken);
+      const result = await listObjects(client, conn.bucket, this.prefix, 1, undefined, this.nextToken, 1000);
       if (this.searchPattern) {
         const lower = this.searchPattern.toLowerCase();
         const matched = result.items.filter(i => i.key.replace(/\/$/, '').split('/').pop()?.toLowerCase().includes(lower));
@@ -583,7 +584,7 @@ export class FolderBrowserPanel {
         if (!conn) return;
 
         const client = createClient(conn);
-        const result = await listObjects(client, conn.bucket, this.prefix, 1, undefined, this.nextToken);
+        const result = await listObjects(client, conn.bucket, this.prefix, 1, undefined, this.nextToken, 1000);
         const lower = this.searchPattern!.toLowerCase();
         const matched = result.items.filter(i => i.key.replace(/\/$/, '').split('/').pop()?.toLowerCase().includes(lower));
         this.items.push(...matched);

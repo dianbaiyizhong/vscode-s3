@@ -73,7 +73,8 @@ export async function listObjects(
   prefix: string = '',
   maxPages: number = 1,
   targetKey?: string,
-  startAfter?: string
+  startAfter?: string,
+  maxKeys?: number,
 ): Promise<{ items: S3ObjectInfo[]; nextToken?: string }> {
   const allCommonPrefixes: { Prefix?: string }[] = [];
   const allContents: { Key?: string; Size?: number; LastModified?: Date }[] = [];
@@ -83,6 +84,7 @@ export async function listObjects(
   let pageCount = 0;
   let isTruncated = false;
 
+  const mk = maxKeys ?? 200;
   const hasMaxPages = maxPages > 0 && !targetKey;
   while (!hasMaxPages || pageCount < maxPages) {
     pageCount++;
@@ -93,7 +95,7 @@ export async function listObjects(
             Bucket: bucket,
             Prefix: prefix,
             Delimiter: '/',
-            MaxKeys: 200,
+            MaxKeys: mk,
             Marker: cursor,
           })
         );
@@ -113,7 +115,7 @@ export async function listObjects(
             Bucket: bucket,
             Prefix: prefix,
             Delimiter: '/',
-            MaxKeys: 200,
+            MaxKeys: mk,
             ...(cursor ? { StartAfter: cursor } : {}),
           })
         );
