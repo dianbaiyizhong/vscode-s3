@@ -37,6 +37,7 @@ export class FolderBrowserPanel {
   private static fileIcon: string = '';
   private static extIcons: Record<string, string> = {};
   private static actionIcons: Record<string, string> = {};
+  private static backIcon: string = '';
 
   private constructor(
     column: vscode.ViewColumn,
@@ -73,6 +74,7 @@ export class FolderBrowserPanel {
             FolderBrowserPanel.actionIcons[name] = fs.readFileSync(path.join(actionDir, f), 'utf-8');
           }
         }
+        FolderBrowserPanel.backIcon = FolderBrowserPanel.actionIcons['back'] || '&#x2190;';
       }
     }
 
@@ -669,6 +671,7 @@ this.searchPattern = undefined;
       FolderBrowserPanel.fileIcon,
       FolderBrowserPanel.extIcons,
       FolderBrowserPanel.actionIcons,
+      FolderBrowserPanel.backIcon,
     );
   }
 }
@@ -696,7 +699,7 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loading: boolean, refreshing: boolean = false, searchPattern?: string, historyRecords?: JumpRecord[], connectionId?: string, folderSvg?: string, fileSvg?: string, extIcons?: Record<string, string>, actionIcons?: Record<string, string>): string {
+function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loading: boolean, refreshing: boolean = false, searchPattern?: string, historyRecords?: JumpRecord[], connectionId?: string, folderSvg?: string, fileSvg?: string, extIcons?: Record<string, string>, actionIcons?: Record<string, string>, backIcon?: string): string {
   const headerRow = `<div class="list-header">
     <span></span>
     <span></span>
@@ -706,6 +709,7 @@ function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loadin
     <span>${t('wv_actions')}</span>
   </div>`;
 
+  const backSvg = backIcon || '&#x2190;';
   const iconInfo = (actionIcons && actionIcons['info']) || '&#x2139;';
   const iconRename = (actionIcons && actionIcons['rename']) || '&#x270F;';
   const iconDelete = (actionIcons && actionIcons['delete']) || '&#x1F5D1;';
@@ -792,10 +796,10 @@ body {
   border: none;
   color: var(--vscode-textLink-foreground);
   cursor: pointer;
-  font-size: 18px;
   padding: 2px 6px;
   border-radius: 4px;
-  line-height: 1;
+  display: flex;
+  align-items: center;
 }
 .back-btn:hover { background: var(--vscode-list-hoverBackground); }
 .back-btn:disabled { opacity: 0.3; cursor: default; }
@@ -1003,6 +1007,7 @@ body {
   color: var(--vscode-menu-foreground);
 }
 .cm-item:hover { background: var(--vscode-menu-selectionBackground); color: var(--vscode-menu-selectionForeground); }
+.cm-item svg { vertical-align: middle; margin-right: 4px; }
 .cm-sep {
   height: 1px;
   margin: 4px 8px;
@@ -1082,7 +1087,7 @@ body {
 <body>
 <div class="drag-overlay" id="dragOverlay">${t('wv_dropUpload')}</div>
 <div class="header">
-  <button class="back-btn" id="backBtn" ${!prefix ? 'disabled' : ''}>&#x2190;</button>
+  <button class="back-btn" id="backBtn" ${!prefix ? 'disabled' : ''}>${backSvg}</button>
   <input class="path-input" id="pathInput" value="${escapeHtml(prefix || '/')}" title="Enter path and press Enter to navigate">
   <button class="action-btn" id="refreshBtn" ${refreshing ? 'disabled' : ''}>${t('wv_refresh')}</button>
   <button class="action-btn" id="uploadBtn">${t('wv_upload')}</button>
@@ -1114,6 +1119,7 @@ const l10n = ${JSON.stringify({
     info: t('wv_info'),
     selected: t('wv_selected'),
   })};
+  const actionIcons2 = ${JSON.stringify(actionIcons || {})};
 
 let sortCol = '';
 let sortDir = 1;
@@ -1240,18 +1246,19 @@ document.addEventListener('contextmenu', e => {
   const item = JSON.parse(itemEl.dataset.item);
   const isFile = !item.isFolder;
   ctxMenu.innerHTML = '';
-  const addItem = (label, action) => {
+  const addItem = (icon, text, action) => {
     const div = document.createElement('div');
     div.className = 'cm-item';
-    div.textContent = label;
+    div.innerHTML = icon + ' ' + text;
     div.addEventListener('click', () => { ctxMenu.classList.remove('show'); vscodeApi.postMessage({ type: action, item }); });
     ctxMenu.appendChild(div);
   };
-  addItem('ℹ ' + l10n.info, 'info');
-  addItem('✏ ' + l10n.rename, 'rename');
-  if (isFile) addItem('⬇ ' + l10n.download, 'download');
-  addItem('🗑 ' + l10n.delete, 'delete');
-  addItem('📋 ' + l10n.copyPath, 'copyPath');
+  const ai = actionIcons2 || {};
+  addItem(ai['info'] || '&#x2139;', l10n.info, 'info');
+  addItem(ai['rename'] || '&#x270F;', l10n.rename, 'rename');
+  if (isFile) addItem(ai['download'] || '&#x2B07;', l10n.download, 'download');
+  addItem(ai['delete'] || '&#x1F5D1;', l10n.delete, 'delete');
+  addItem(ai['copypath'] || '&#x1F4CB;', l10n.copyPath, 'copyPath');
   ctxMenu.style.left = e.clientX + 'px';
   ctxMenu.style.top = e.clientY + 'px';
   ctxMenu.classList.add('show');
