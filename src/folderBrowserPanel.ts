@@ -784,6 +784,7 @@ body {
   font-size: var(--vscode-font-size);
   color: var(--vscode-foreground);
   background: var(--vscode-editor-background);
+  overflow-y: scroll;
 }
 .header {
   display: flex;
