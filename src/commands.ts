@@ -5,6 +5,7 @@ import { t } from './i18n';
 import { JumpHistory } from './jumpHistory';
 import { FolderBrowserPanel } from './folderBrowserPanel';
 import { SettingsPanel } from './settingsPanel';
+import { createClient, getBucketInfo } from './s3Client';
 
 let jumpHistory: JumpHistory;
 let connManager: ConnectionManager;
@@ -39,6 +40,9 @@ export function registerCommands(
     ),
     vscode.commands.registerCommand('s3.goToPath', (item: S3TreeItem) =>
       handleGoToPath(connectionManager, item)
+    ),
+    vscode.commands.registerCommand('s3.bucketInfo', (item: S3TreeItem) =>
+      handleBucketInfo(item)
     )
   );
 }
@@ -102,6 +106,40 @@ async function handleGoToPath(
   }
 }
 
+async function handleBucketInfo(item: S3TreeItem): Promise<void> {
+  if (!item || item.contextValue !== 's3Connection') return;
+  const conn = connManager.getConnection(item.connectionId);
+  if (!conn) return;
+  const client = createClient(conn);
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: t('msg_gatheringBucketInfo') },
+    async () => {
+      try {
+        const info = await getBucketInfo(client, conn.bucket);
+        const items: { label: string; value: string }[] = [
+          { label: t('msg_bucket'), value: conn.bucket },
+          { label: t('msg_totalObjects'), value: info.totalObjects >= 200000 ? '200000+' : String(info.totalObjects) },
+          { label: t('msg_totalSize'), value: formatSize(info.totalSize) },
+          { label: t('msg_connection'), value: conn.name },
+          { label: t('msg_endpoint'), value: conn.endpoint },
+        ];
+        const picks = items.map(i => ({ label: i.label, description: i.value }));
+        const pick = await vscode.window.showQuickPick(picks, {
+          title: t('msg_bucketInfoTitle', conn.bucket),
+          placeHolder: t('msg_bucketInfoPlaceholder'),
+          matchOnDescription: true,
+        });
+        if (pick) {
+          vscode.env.clipboard.writeText(pick.description || '');
+          vscode.window.setStatusBarMessage(`$(link) ${t('msg_copied', pick.description)}`, 2000);
+        }
+      } catch (err: any) {
+        vscode.window.showErrorMessage(`Failed to get bucket info: ${err.message}`);
+      }
+    }
+  );
+}
+
 function getParentPrefix(key: string): string {
   const normalized = key.replace(/\/$/, '');
   const lastSlash = normalized.lastIndexOf('/');
@@ -113,4 +151,11 @@ function getLabel(key: string, _isFolder: boolean): string {
   const normalized = key.replace(/\/$/, '');
   const segments = normalized.split('/');
   return segments[segments.length - 1] || '/';
+}
+
+function formatSize(bytes?: number): string {
+  if (bytes == null) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

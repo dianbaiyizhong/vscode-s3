@@ -129,6 +129,15 @@ const en: Record<string, string> = {
 
   msg_pathNotFound: 'Path not found in the bucket',
 
+  msg_bucketInfoTitle: 'Bucket Info — {0}',
+  msg_bucketInfoPlaceholder: 'Click to copy value',
+  msg_gatheringBucketInfo: 'Gathering bucket info...',
+  msg_bucket: 'Bucket',
+  msg_totalObjects: 'Total Objects',
+  msg_totalSize: 'Total Size',
+  msg_connection: 'Connection',
+  msg_endpoint: 'Endpoint',
+
   // s3Tree
   tree_connTooltip: '{0}\nBucket: {1}\nEndpoint: {2}',
   tree_fileTooltip: '{0}\nSize: {1}\nModified: {2}',
@@ -290,6 +299,15 @@ const zh: Record<string, string> = {
   msg_editUpdated: '连接已更新',
 
   msg_pathNotFound: '在存储桶中未找到该路径',
+
+  msg_bucketInfoTitle: '存储桶信息 — {0}',
+  msg_bucketInfoPlaceholder: '点击复制',
+  msg_gatheringBucketInfo: '正在获取存储桶信息...',
+  msg_bucket: '存储桶',
+  msg_totalObjects: '对象总数',
+  msg_totalSize: '总大小',
+  msg_connection: '连接',
+  msg_endpoint: '服务地址',
 
   tree_connTooltip: '{0}\n存储桶：{1}\n服务地址：{2}',
   tree_fileTooltip: '{0}\n大小：{1}\n修改时间：{2}',

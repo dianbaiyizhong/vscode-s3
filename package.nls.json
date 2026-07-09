@@ -18,5 +18,6 @@
   "cmd.searchFiles": "Search files...",
   "cmd.goToPath": "Go to Path...",
   "cmd.getInfo": "Get Info",
-  "cmd.openConnection": "Open Connection"
+  "cmd.openConnection": "Open Connection",
+  "cmd.bucketInfo": "Bucket Info..."
 }

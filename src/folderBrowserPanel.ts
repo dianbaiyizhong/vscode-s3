@@ -404,8 +404,8 @@ export class FolderBrowserPanel {
           const mode = message.mode as string || 'prefix';
           if (!pattern) break;
           if (pattern.includes('/')) {
-this.searchPattern = undefined;
-    this.searchPrefix = undefined;
+            this.searchPattern = undefined;
+            this.searchPrefix = undefined;
             const trimmed = pattern.replace(/\/$/, '');
             const lastSlash = trimmed.lastIndexOf('/');
             const lastSegment = lastSlash === -1 ? pattern : trimmed.substring(lastSlash + 1);
@@ -710,6 +710,8 @@ function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loadin
   </div>`;
 
   const backSvg = backIcon || '&#x2190;';
+  const refreshSvg = (actionIcons && actionIcons['refresh']) || '&#x21BB;';
+  const uploadSvg = (actionIcons && actionIcons['upload']) || '&#x2B06;';
   const iconInfo = (actionIcons && actionIcons['info']) || '&#x2139;';
   const iconRename = (actionIcons && actionIcons['rename']) || '&#x270F;';
   const iconDelete = (actionIcons && actionIcons['delete']) || '&#x1F5D1;';
@@ -837,11 +839,11 @@ body {
   border: none;
   color: var(--vscode-foreground);
   cursor: pointer;
-  font-size: 16px;
   padding: 2px 6px;
   border-radius: 3px;
-  line-height: 1;
   opacity: 0.7;
+  display: flex;
+  align-items: center;
 }
 .icon-btn:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground); }
 .sel-bar {
@@ -1089,8 +1091,8 @@ body {
 <div class="header">
   <button class="back-btn" id="backBtn" ${!prefix ? 'disabled' : ''}>${backSvg}</button>
   <input class="path-input" id="pathInput" value="${escapeHtml(prefix || '/')}" title="Enter path and press Enter to navigate">
-  <button class="action-btn" id="refreshBtn" ${refreshing ? 'disabled' : ''}>${t('wv_refresh')}</button>
-  <button class="action-btn" id="uploadBtn">${t('wv_upload')}</button>
+  <button class="icon-btn" id="refreshBtn" ${refreshing ? 'disabled' : ''}>${refreshSvg}</button>
+  <button class="icon-btn" id="uploadBtn">${uploadSvg}</button>
   <div class="history-dropdown" id="historyDropdown"></div>
 </div>
 <div class="sel-bar" id="selBar">

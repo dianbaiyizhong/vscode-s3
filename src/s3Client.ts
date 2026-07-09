@@ -424,6 +424,34 @@ export async function getObjectDetail(
   };
 }
 
+export interface BucketInfo {
+  totalObjects: number;
+  totalSize: number;
+  buckets?: string[];
+}
+
+export async function getBucketInfo(client: S3Client, bucket: string): Promise<BucketInfo> {
+  let totalObjects = 0;
+  let totalSize = 0;
+  let cursor: string | undefined;
+  for (let i = 0; i < 200; i++) {
+    const response = await client.send(new ListObjectsV2Command({
+      Bucket: bucket,
+      MaxKeys: 1000,
+      ...(cursor ? { StartAfter: cursor } : {}),
+    }));
+    const contents = response.Contents || [];
+    totalObjects += contents.length;
+    for (const obj of contents) {
+      totalSize += obj.Size || 0;
+    }
+    if (!response.IsTruncated) break;
+    cursor = contents[contents.length - 1]?.Key;
+    if (!cursor) break;
+  }
+  return { totalObjects, totalSize };
+}
+
 export async function testConnection(
   client: S3Client,
   bucket: string

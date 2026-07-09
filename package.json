@@ -18,6 +18,7 @@
     "onCommand:s3.openSettings",
     "onCommand:s3.refresh",
     "onCommand:s3.goToPath",
+    "onCommand:s3.bucketInfo",
     "onCommand:s3.openConnection"
   ],
   "main": "./dist/extension.js",
@@ -74,6 +75,11 @@
         "command": "s3.openConnection",
         "title": "%cmd.openConnection%",
         "icon": "$(folder-opened)"
+      },
+      {
+        "command": "s3.bucketInfo",
+        "title": "%cmd.bucketInfo%",
+        "icon": "$(info)"
       }
     ],
     "menus": {
@@ -97,6 +103,11 @@
       "view/item/context": [
         {
           "command": "s3.editConnection",
+          "when": "view == s3Explorer && viewItem == s3Connection",
+          "group": "inline"
+        },
+        {
+          "command": "s3.bucketInfo",
           "when": "view == s3Explorer && viewItem == s3Connection",
           "group": "inline"
         },

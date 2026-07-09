@@ -18,5 +18,6 @@
   "cmd.searchFiles": "搜索文件...",
   "cmd.goToPath": "跳转到路径...",
   "cmd.getInfo": "详细信息",
-  "cmd.openConnection": "打开连接"
+  "cmd.openConnection": "打开连接",
+  "cmd.bucketInfo": "存储桶信息..."
 }
