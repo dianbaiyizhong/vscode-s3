@@ -45,7 +45,7 @@ export class SettingsPanel {
           break;
         case 'add':
           this.editingId = undefined;
-          this.formData = { region: 'us-east-1', forcePathStyle: false };
+          this.formData = { region: 'us-east-1', forcePathStyle: false, proxyEnabled: false };
           this.renderForm();
           break;
         case 'edit':
@@ -114,6 +114,11 @@ export class SettingsPanel {
       forcePathStyle: data.forcePathStyle === true || data.forcePathStyle === 'true',
       accessKeyId: data.accessKeyId,
       secretAccessKey: data.secretAccessKey,
+      proxyEnabled: data.proxyEnabled === true || data.proxyEnabled === 'true',
+      proxyUrl: data.proxyUrl || undefined,
+      proxyUsername: data.proxyUsername || undefined,
+      proxyPassword: data.proxyPassword || undefined,
+      noProxy: data.noProxy || undefined,
     };
     if (this.editingId) {
       conn.id = this.editingId;
@@ -137,6 +142,11 @@ export class SettingsPanel {
       forcePathStyle: data.forcePathStyle === true || data.forcePathStyle === 'true',
       accessKeyId: data.accessKeyId || '',
       secretAccessKey: data.secretAccessKey || '',
+      proxyEnabled: data.proxyEnabled === true || data.proxyEnabled === 'true',
+      proxyUrl: data.proxyUrl || undefined,
+      proxyUsername: data.proxyUsername || undefined,
+      proxyPassword: data.proxyPassword || undefined,
+      noProxy: data.noProxy || undefined,
     };
     if (!conn.endpoint || !conn.bucket) {
       vscode.window.showErrorMessage(t('val_endpointBucketRequired'));
@@ -162,11 +172,12 @@ function getListHtml(connections: S3Connection[]): string {
     ? `<div class="empty">${t('wv_settings_empty')}</div>`
     : connections.map(c => {
         const icon = c.forcePathStyle ? '🔧' : '☁️';
+        const proxyTag = c.proxyEnabled && c.proxyUrl ? `<span class="proxy-tag">Proxy</span>` : '';
         return `<div class="conn-row" data-id="${c.id}">
           <div class="conn-info">
             <span class="conn-icon">${icon}</span>
             <div class="conn-details">
-              <div class="conn-name">${escapeHtml(c.name)}</div>
+              <div class="conn-name">${escapeHtml(c.name)} ${proxyTag}</div>
               <div class="conn-meta">${escapeHtml(c.endpoint)} / ${escapeHtml(c.bucket)}</div>
             </div>
           </div>
@@ -199,6 +210,7 @@ body { margin:0; padding:16px; font-family:var(--vscode-font-family); font-size:
 .conn-actions { display:flex; gap:6px; flex-shrink:0; }
 .action-btn { background:none; border:1px solid var(--vscode-panel-border); cursor:pointer; padding:4px 8px; border-radius:3px; font-size:14px; opacity:0.7; transition:opacity 0.15s; }
 .action-btn:hover { opacity:1; background:var(--vscode-list-hoverBackground); }
+.proxy-tag { display:inline-block; font-size:10px; font-weight:600; padding:1px 5px; border-radius:3px; background:var(--vscode-button-background); color:var(--vscode-button-foreground); vertical-align:middle; margin-left:4px; }
 </style>
 </head>
 <body>
@@ -235,6 +247,7 @@ function getFormHtml(data: Partial<S3Connection>, isEdit: boolean): string {
   const forcePathStyle = data.forcePathStyle ?? false;
   const accessKeyId = data.accessKeyId || '';
   const secretAccessKey = data.secretAccessKey || '';
+  const proxyEnabled = data.proxyEnabled ?? false;
 
   return `<!DOCTYPE html>
 <html lang="${isZh() ? 'zh-CN' : 'en'}">
@@ -261,6 +274,8 @@ input:focus { outline:none; border-color:var(--vscode-focusBorder); }
 .btn-secondary:hover { background:var(--vscode-button-secondaryHoverBackground); }
 .btn-test { background:none; border:1px solid var(--vscode-panel-border); color:var(--vscode-foreground); padding:8px 20px; cursor:pointer; border-radius:2px; font-size:var(--vscode-font-size); }
 .btn-test:hover { background:var(--vscode-list-hoverBackground); }
+.proxy-section { margin-bottom:14px; border:1px solid var(--vscode-panel-border); border-radius:4px; padding:8px 12px; }
+.proxy-fields { margin-top:4px; }
 </style>
 </head>
 <body>
@@ -297,6 +312,31 @@ input:focus { outline:none; border-color:var(--vscode-focusBorder); }
     <label for="secretAccessKey">${t('prompt_secretKey')}</label>
     <input type="password" id="secretAccessKey" value="${escapeHtml(secretAccessKey)}" placeholder="${t('prompt_secretKey_placeholder')}" required>
   </div>
+  <div class="proxy-section">
+    <div class="checkbox-row">
+      <input type="checkbox" id="proxyEnabled" ${proxyEnabled ? 'checked' : ''}>
+      <label for="proxyEnabled" style="margin:0;font-size:var(--vscode-font-size);cursor:pointer;">${t('prompt_proxyEnabled')}</label>
+    </div>
+    <div id="proxyFields" class="proxy-fields" style="${proxyEnabled ? '' : 'display:none;'}">
+      <div class="field-group">
+        <label for="proxyUrl">${t('prompt_proxyUrl')}</label>
+        <input type="text" id="proxyUrl" value="${escapeHtml(data.proxyUrl || '')}" placeholder="${t('prompt_proxyUrl_placeholder')}">
+      </div>
+      <div class="field-group">
+        <label for="proxyUsername">${t('prompt_proxyUsername')}</label>
+        <input type="text" id="proxyUsername" value="${escapeHtml(data.proxyUsername || '')}" placeholder="${t('prompt_proxyUsername_placeholder')}">
+      </div>
+      <div class="field-group">
+        <label for="proxyPassword">${t('prompt_proxyPassword')}</label>
+        <input type="password" id="proxyPassword" value="${escapeHtml(data.proxyPassword || '')}" placeholder="${t('prompt_proxyPassword_placeholder')}">
+      </div>
+      <div class="field-group">
+        <label for="noProxy">${t('prompt_noProxy')}</label>
+        <input type="text" id="noProxy" value="${escapeHtml(data.noProxy || '')}" placeholder="${t('prompt_noProxy_placeholder')}">
+        <div class="hint">${t('prompt_noProxy_placeholder')}</div>
+      </div>
+    </div>
+  </div>
   <div class="actions">
     <button type="submit" class="btn-primary">${t('wv_settings_save')}</button>
     <button type="button" class="btn-test" id="testBtn">${t('wv_settings_test')}</button>
@@ -314,7 +354,11 @@ document.getElementById('connForm').addEventListener('submit', e => {
   e.preventDefault();
   vscodeApi.postMessage({ type: 'save', data: getFormData() });
 });
+document.getElementById('proxyEnabled').addEventListener('change', function() {
+  document.getElementById('proxyFields').style.display = this.checked ? '' : 'none';
+});
 function getFormData() {
+  const enabled = document.getElementById('proxyEnabled').checked;
   return {
     name: document.getElementById('name').value.trim(),
     endpoint: document.getElementById('endpoint').value.trim(),
@@ -323,6 +367,11 @@ function getFormData() {
     forcePathStyle: document.getElementById('forcePathStyle').checked,
     accessKeyId: document.getElementById('accessKeyId').value.trim(),
     secretAccessKey: document.getElementById('secretAccessKey').value.trim(),
+    proxyEnabled: enabled,
+    proxyUrl: enabled ? document.getElementById('proxyUrl').value.trim() : '',
+    proxyUsername: enabled ? document.getElementById('proxyUsername').value.trim() : '',
+    proxyPassword: enabled ? document.getElementById('proxyPassword').value.trim() : '',
+    noProxy: enabled ? document.getElementById('noProxy').value.trim() : '',
   };
 }
 </script>

@@ -28,20 +28,38 @@ export function createClient(connection: S3Connection): S3Client {
     forcePathStyle: connection.forcePathStyle,
   };
 
-  const proxyEnv = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
-  const noProxyEnv = process.env.NO_PROXY || process.env.no_proxy;
+  let proxyUrl = '';
+  let noProxy = '';
 
-  if (proxyEnv) {
+  if (connection.proxyEnabled && connection.proxyUrl) {
+    proxyUrl = connection.proxyUrl;
+    if (connection.proxyUsername) {
+      const url = new URL(proxyUrl);
+      url.username = connection.proxyUsername;
+      if (connection.proxyPassword) url.password = connection.proxyPassword;
+      proxyUrl = url.toString().replace(/\/$/, '');
+    }
+    noProxy = connection.noProxy || '';
+  }
+
+  if (!proxyUrl) {
+    proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy
+      || process.env.HTTP_PROXY || process.env.http_proxy
+      || '';
+    noProxy = process.env.NO_PROXY || process.env.no_proxy || '';
+  }
+
+  if (proxyUrl) {
     const endpointUrl = new URL(connection.endpoint);
-    const shouldProxy = !noProxyEnv || !noProxyEnv.split(',').some(pattern => {
+    const shouldProxy = !noProxy || !noProxy.split(',').some(pattern => {
       const p = pattern.trim();
       return p && (endpointUrl.hostname === p || endpointUrl.hostname.endsWith('.' + p));
     });
 
     if (shouldProxy) {
       config.requestHandler = {
-        httpAgent: new HttpProxyAgent(proxyEnv),
-        httpsAgent: new HttpsProxyAgent(proxyEnv),
+        httpAgent: new HttpProxyAgent(proxyUrl),
+        httpsAgent: new HttpsProxyAgent(proxyUrl),
       };
     }
   }

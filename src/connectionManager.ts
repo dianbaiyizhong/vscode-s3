@@ -9,6 +9,11 @@ export interface S3Connection {
   forcePathStyle: boolean;
   accessKeyId: string;
   secretAccessKey: string;
+  proxyEnabled?: boolean;
+  proxyUrl?: string;
+  proxyUsername?: string;
+  proxyPassword?: string;
+  noProxy?: string;
 }
 
 const STORAGE_KEY = 's3Connections';
