@@ -32,6 +32,7 @@ export class FolderBrowserPanel {
   private refreshing = false;
   private searchPattern?: string;
   private singleFileKey?: string;
+  private searchPrefix?: string;
   private static folderIcon: string = '';
   private static fileIcon: string = '';
   private static extIcons: Record<string, string> = {};
@@ -90,6 +91,7 @@ export class FolderBrowserPanel {
           break;
         case 'navigate':
           this.searchPattern = undefined;
+          this.searchPrefix = undefined;
           this.singleFileKey = undefined;
           this.prefix = message.prefix;
           this.items = [];
@@ -102,6 +104,7 @@ export class FolderBrowserPanel {
           break;
         case 'navigateUp': {
           this.searchPattern = undefined;
+          this.searchPrefix = undefined;
           this.singleFileKey = undefined;
           const parent = this.getParentPrefix();
           this.prefix = parent;
@@ -296,6 +299,7 @@ export class FolderBrowserPanel {
         }
         case 'refresh':
           this.searchPattern = undefined;
+          this.searchPrefix = undefined;
           this.refreshing = true;
           this.loading = false;
           if (this.singleFileKey) {
@@ -387,9 +391,11 @@ export class FolderBrowserPanel {
         }
         case 'searchFiles': {
           const pattern = message.pattern as string;
+          const mode = message.mode as string || 'prefix';
           if (!pattern) break;
           if (pattern.includes('/')) {
-            this.searchPattern = undefined;
+this.searchPattern = undefined;
+    this.searchPrefix = undefined;
             const trimmed = pattern.replace(/\/$/, '');
             const lastSlash = trimmed.lastIndexOf('/');
             const lastSegment = lastSlash === -1 ? pattern : trimmed.substring(lastSlash + 1);
@@ -433,13 +439,22 @@ export class FolderBrowserPanel {
           } else {
             this.singleFileKey = undefined;
             this.searchPattern = pattern;
+            if (mode === 'prefix') {
+              this.searchPrefix = this.prefix + pattern;
+            } else {
+              this.searchPrefix = undefined;
+            }
             this.items = [];
             this.nextToken = undefined;
             this.render();
             await vscode.window.withProgress(
               { location: vscode.ProgressLocation.Notification, title: `Searching "${pattern}" in ${this.prefix || '/'}...` },
               async () => {
-                await this.loadAllSearchPages();
+                if (mode === 'prefix') {
+                  await this.loadAllSearchPages();
+                } else {
+                  await this.loadAllFuzzySearchPages();
+                }
               }
             );
             if (this.items.length === 0) {
@@ -579,45 +594,59 @@ export class FolderBrowserPanel {
       if (!conn) return;
 
       const client = createClient(conn);
-      const result = await listObjects(client, conn.bucket, this.prefix, 1, undefined, this.nextToken, 1000);
-      if (this.searchPattern) {
-        const lower = this.searchPattern.toLowerCase();
-        const matched = result.items.filter(i => i.key.replace(/\/$/, '').split('/').pop()?.toLowerCase().includes(lower));
-        this.items.push(...matched);
-        this.nextToken = result.nextToken;
-      } else {
-        this.items.push(...result.items);
-        this.nextToken = result.nextToken;
-      }
+      const prefix = this.searchPrefix ?? this.prefix;
+      const result = await listObjects(client, conn.bucket, prefix, 1, undefined, this.nextToken, 1000);
+      this.items.push(...result.items);
+      this.nextToken = result.nextToken;
     } finally {
       this.loading = false;
     }
   }
 
   private async loadAllSearchPages(): Promise<void> {
-    while (true) {
-      if (this.loading) return;
-      this.loading = true;
-      try {
-        const conn = this.connectionManager.getConnection(this.connectionId);
-        if (!conn) return;
+    if (this.loading) return;
+    this.loading = true;
+    try {
+      const conn = this.connectionManager.getConnection(this.connectionId);
+      if (!conn) return;
 
-        const client = createClient(conn);
-        const result = await listObjects(client, conn.bucket, this.prefix, 1, undefined, this.nextToken, 1000);
-        const lower = this.searchPattern!.toLowerCase();
+      const client = createClient(conn);
+      const result = await listObjects(client, conn.bucket, this.searchPrefix, 1);
+      this.items = result.items;
+      this.nextToken = result.nextToken;
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  private async loadAllFuzzySearchPages(): Promise<void> {
+    if (this.loading) return;
+    this.loading = true;
+    try {
+      const conn = this.connectionManager.getConnection(this.connectionId);
+      if (!conn) return;
+
+      const client = createClient(conn);
+      const lower = this.searchPattern!.toLowerCase();
+
+      let cursor: string | undefined;
+      for (let i = 0; i < 50; i++) {
+        if (this.items.length > 0) break;
+        const result = await listObjects(client, conn.bucket, this.prefix, 1, undefined, cursor, 1000);
         const matched = result.items.filter(i => i.key.replace(/\/$/, '').split('/').pop()?.toLowerCase().includes(lower));
         this.items.push(...matched);
-        this.nextToken = result.nextToken;
-        if (this.items.length > 0 || this.nextToken === undefined) break;
-      } finally {
-        this.loading = false;
+        cursor = result.nextToken;
+        if (!cursor) break;
       }
+      this.nextToken = cursor;
+    } finally {
+      this.loading = false;
     }
   }
 
   private render(): void {
     const displayPath = this.singleFileKey || this.prefix || '/';
-    this.panel.title = `${this.searchPattern ? '🔍 ' + this.searchPattern : displayPath} — ${this.connectionName}`;
+    this.panel.title = `${this.searchPrefix ? '🔍 ' + this.searchPrefix : displayPath} — ${this.connectionName}`;
     const records = this.getHistoryRecords?.() || [];
     this.panel.webview.html = getHtml(
       displayPath,
@@ -990,6 +1019,29 @@ body {
   opacity: 0.9;
 }
 .header { position: relative; }
+.search-mode {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.search-mode select {
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+  border: 1px solid var(--vscode-dropdown-border);
+  border-radius: 3px;
+  padding: 5px 6px;
+  font-size: 13px;
+  outline: none;
+  line-height: 1.3;
+}
+.search-mode select:focus {
+  border-color: var(--vscode-focusBorder);
+}
+.search-mode .filter-input {
+  margin-bottom: 0;
+  flex: 1;
+}
 </style>
 </head>
 <body>
@@ -1005,7 +1057,13 @@ body {
   <span class="count" id="selCount" data-format="${t('wv_selected')}">${t('wv_selected', '0')}</span>
   <button class="del-btn" id="delSelectedBtn">${t('wv_deleteSelected')}</button>
 </div>
-<input class="filter-input" id="filterInput" type="text" placeholder="${t('wv_filterPlaceholder')}" value="${searchPattern ? escapeHtml(searchPattern) : ''}"${searchPattern ? ' data-searching="1"' : ''} autocomplete="off">
+<div class="search-mode">
+  <select id="searchModeSelect">
+    <option value="prefix">${t('wv_searchPrefix')}</option>
+    <option value="fuzzy">${t('wv_searchFuzzy')}</option>
+  </select>
+  <input class="filter-input" id="filterInput" type="text" placeholder="${t('wv_filterPlaceholder')}" value="${searchPattern ? escapeHtml(searchPattern) : ''}"${searchPattern ? ' data-searching="1"' : ''} autocomplete="off">
+</div>
 ${emptyState}
 ${headerRow}
 ${allRows}
@@ -1252,6 +1310,7 @@ document.getElementById('uploadBtn')?.addEventListener('click', () => {
   vscodeApi.postMessage({ type: 'upload' });
 });
 const filterInput = document.getElementById('filterInput');
+const searchModeSelect = document.getElementById('searchModeSelect');
 filterInput?.addEventListener('input', () => {
   const q = filterInput.value.toLowerCase();
   if (filterInput.dataset.searching) {
@@ -1268,7 +1327,8 @@ filterInput?.addEventListener('keydown', e => {
     const val = filterInput.value.trim();
     if (!val) { filterInput.value = ''; filterInput.dataset.searching = ''; vscodeApi.postMessage({ type: 'refresh' }); return; }
     filterInput.dataset.searching = '1';
-    vscodeApi.postMessage({ type: 'searchFiles', pattern: val });
+    const mode = searchModeSelect ? searchModeSelect.value : 'prefix';
+    vscodeApi.postMessage({ type: 'searchFiles', pattern: val, mode: mode });
   } else if (e.key === 'Escape') {
     filterInput.value = '';
     filterInput.blur();
