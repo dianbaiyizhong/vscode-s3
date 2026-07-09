@@ -36,6 +36,7 @@ export class FolderBrowserPanel {
   private static folderIcon: string = '';
   private static fileIcon: string = '';
   private static extIcons: Record<string, string> = {};
+  private static actionIcons: Record<string, string> = {};
 
   private constructor(
     column: vscode.ViewColumn,
@@ -63,6 +64,13 @@ export class FolderBrowserPanel {
           for (const f of fs.readdirSync(iconsDir)) {
             const ext = path.parse(f).name.toLowerCase();
             FolderBrowserPanel.extIcons[ext] = fs.readFileSync(path.join(iconsDir, f), 'utf-8');
+          }
+        }
+        const actionDir = path.join(extPath, 'resources', 'action-icons');
+        if (fs.existsSync(actionDir)) {
+          for (const f of fs.readdirSync(actionDir)) {
+            const name = path.parse(f).name.toLowerCase();
+            FolderBrowserPanel.actionIcons[name] = fs.readFileSync(path.join(actionDir, f), 'utf-8');
           }
         }
       }
@@ -660,6 +668,7 @@ this.searchPattern = undefined;
       FolderBrowserPanel.folderIcon,
       FolderBrowserPanel.fileIcon,
       FolderBrowserPanel.extIcons,
+      FolderBrowserPanel.actionIcons,
     );
   }
 }
@@ -687,7 +696,7 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loading: boolean, refreshing: boolean = false, searchPattern?: string, historyRecords?: JumpRecord[], connectionId?: string, folderSvg?: string, fileSvg?: string, extIcons?: Record<string, string>): string {
+function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loading: boolean, refreshing: boolean = false, searchPattern?: string, historyRecords?: JumpRecord[], connectionId?: string, folderSvg?: string, fileSvg?: string, extIcons?: Record<string, string>, actionIcons?: Record<string, string>): string {
   const headerRow = `<div class="list-header">
     <span></span>
     <span></span>
@@ -697,6 +706,11 @@ function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loadin
     <span>${t('wv_actions')}</span>
   </div>`;
 
+  const iconInfo = (actionIcons && actionIcons['info']) || '&#x2139;';
+  const iconRename = (actionIcons && actionIcons['rename']) || '&#x270F;';
+  const iconDelete = (actionIcons && actionIcons['delete']) || '&#x1F5D1;';
+  const iconCopy = (actionIcons && actionIcons['copypath']) || '&#x1F4CB;';
+  const iconDownload = (actionIcons && actionIcons['download']) || '&#x2B07;';
   const folderIconSvg = folderSvg || '&#x1F4C1;';
   const fileIconSvg = fileSvg || '&#x1F4C4;';
   const folderRows = items.filter(i => i.isFolder).map(i => {
@@ -709,10 +723,10 @@ function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loadin
       <span class="item-meta"></span>
       <span class="item-date"></span>
       <span class="item-actions">
-        <span class="action" data-action="info" title="${t('wv_info')}">&#x2139;</span>
-        <span class="action" data-action="rename" title="${t('wv_rename')}">&#x270F;</span>
-        <span class="action" data-action="delete" title="${t('wv_delete')}">&#x1F5D1;</span>
-        <span class="action" data-action="copyPath" title="${t('wv_copyPath')}">&#x1F4CB;</span>
+        <span class="action" data-action="info" title="${t('wv_info')}">${iconInfo}</span>
+        <span class="action" data-action="rename" title="${t('wv_rename')}">${iconRename}</span>
+        <span class="action" data-action="delete" title="${t('wv_delete')}">${iconDelete}</span>
+        <span class="action" data-action="copyPath" title="${t('wv_copyPath')}">${iconCopy}</span>
       </span>
     </div>`;
   }).join('');
@@ -729,11 +743,11 @@ function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loadin
       <span class="item-meta">${formatSize(i.size)}</span>
       <span class="item-date">${i.lastModified ? formatDate(new Date(i.lastModified)) : ''}</span>
       <span class="item-actions">
-        <span class="action" data-action="info" title="${t('wv_info')}">&#x2139;</span>
-        <span class="action" data-action="rename" title="${t('wv_rename')}">&#x270F;</span>
-        <span class="action" data-action="download" title="${t('wv_download')}">&#x2B07;</span>
-        <span class="action" data-action="delete" title="${t('wv_delete')}">&#x1F5D1;</span>
-        <span class="action" data-action="copyPath" title="${t('wv_copyPath')}">&#x1F4CB;</span>
+        <span class="action" data-action="info" title="${t('wv_info')}">${iconInfo}</span>
+        <span class="action" data-action="rename" title="${t('wv_rename')}">${iconRename}</span>
+        <span class="action" data-action="download" title="${t('wv_download')}">${iconDownload}</span>
+        <span class="action" data-action="delete" title="${t('wv_delete')}">${iconDelete}</span>
+        <span class="action" data-action="copyPath" title="${t('wv_copyPath')}">${iconCopy}</span>
       </span>
     </div>`;
   }).join('');
@@ -920,6 +934,27 @@ body {
   transition: opacity 0.1s, background 0.1s;
 }
 .action:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground); }
+.action::after {
+  content: attr(title);
+  position: absolute;
+  bottom: -28px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--vscode-editorWidget-background, #333);
+  color: var(--vscode-editorWidget-foreground, #fff);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 999;
+}
+.action {
+  position: relative;
+}
+.action:hover::after { opacity: 1; }
 .btn {
   display: block;
   width: 100%;
