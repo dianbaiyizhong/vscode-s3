@@ -150,7 +150,7 @@ export class SettingsPanel {
         if (result.ok) {
           vscode.window.showInformationMessage(t('msg_connected', conn.name || conn.bucket));
         } else {
-          vscode.window.showErrorMessage(t('msg_connectionFailed', result.error || 'Unknown error'));
+          vscode.window.showErrorMessage(t('msg_connectionFailed', result.error || t('msg_unknownError')));
         }
       }
     );

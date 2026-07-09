@@ -134,7 +134,7 @@ async function handleBucketInfo(item: S3TreeItem): Promise<void> {
           vscode.window.setStatusBarMessage(`$(link) ${t('msg_copied', pick.description)}`, 2000);
         }
       } catch (err: any) {
-        vscode.window.showErrorMessage(`Failed to get bucket info: ${err.message}`);
+        vscode.window.showErrorMessage(t('msg_bucketInfoFailed', err.message));
       }
     }
   );

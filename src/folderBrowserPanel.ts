@@ -135,7 +135,7 @@ export class FolderBrowserPanel {
         }
         case 'historyJump': {
           const conn = this.connectionManager.getConnection(message.connectionId as string);
-          if (!conn) { vscode.window.showErrorMessage('Connection not found'); break; }
+          if (!conn) { vscode.window.showErrorMessage(t('msg_connNotFound')); break; }
           const key = message.key as string;
           const prefix = key.endsWith('/') ? key : getParentPrefixDir(key);
           const label = key.replace(/\/$/, '').split('/').pop() || '/';
@@ -151,12 +151,14 @@ export class FolderBrowserPanel {
           if (!conn) return;
           const item = message.item as S3ObjectInfo;
           const name = item.key.split('/').pop() || item.key;
+          const deleteBtn = t('msg_deleteBtn');
+          const msgKey = item.isFolder ? 'msg_deleteFolderConfirm' : 'msg_deleteConfirm';
           const confirmed = await vscode.window.showWarningMessage(
-            `Delete ${item.isFolder ? 'folder' : 'file'} "${name}"?`,
+            t(msgKey, name),
             { modal: true },
-            'Delete'
+            deleteBtn
           );
-          if (confirmed !== 'Delete') return;
+          if (confirmed !== deleteBtn) return;
           const client = createClient(conn);
           if (item.isFolder) {
             await deleteFolder(client, conn.bucket, item.key);
@@ -178,7 +180,7 @@ export class FolderBrowserPanel {
           const item = message.item as S3ObjectInfo;
           const oldName = item.key.split('/').pop() || item.key;
           const newName = await vscode.window.showInputBox({
-            title: `Rename ${item.isFolder ? 'folder' : 'file'}`,
+            title: t(item.isFolder ? 'prompt_rename_folder' : 'prompt_rename_file'),
             value: oldName,
             ignoreFocusOut: true,
           });
@@ -201,7 +203,7 @@ export class FolderBrowserPanel {
             await this.loadItems();
             this.render();
           } catch (err: any) {
-            vscode.window.showErrorMessage(`Rename failed: ${err.message}`);
+            vscode.window.showErrorMessage(t('msg_renameFailed', err.message));
           }
           break;
         }
@@ -210,16 +212,17 @@ export class FolderBrowserPanel {
           if (!conn) return;
           const items = message.items as { key: string; isFolder: boolean }[];
           if (!items || items.length === 0) break;
+          const deleteBtn = t('msg_deleteBtn');
           const confirmed = await vscode.window.showWarningMessage(
-            `Delete ${items.length} selected item(s)?`,
+            t('msg_deleteMultiConfirm', items.length),
             { modal: true },
-            'Delete'
+            deleteBtn
           );
-          if (confirmed !== 'Delete') return;
+          if (confirmed !== deleteBtn) return;
           const client = createClient(conn);
           let failCount = 0;
           await vscode.window.withProgress(
-            { location: vscode.ProgressLocation.Notification, title: 'Deleting...' },
+            { location: vscode.ProgressLocation.Notification, title: t('msg_deleting', items.length) },
             async (progress) => {
               for (let i = 0; i < items.length; i++) {
                 progress.report({ message: `${i + 1}/${items.length}` });
@@ -244,7 +247,7 @@ export class FolderBrowserPanel {
         case 'copyPath': {
           const item = message.item as S3ObjectInfo;
           vscode.env.clipboard.writeText(item.key);
-          vscode.window.setStatusBarMessage(`$(link) Copied: ${item.key}`, 3000);
+          vscode.window.setStatusBarMessage(`$(link) ${t('msg_copiedPath', item.key)}`, 3000);
           break;
         }
         case 'info': {
@@ -254,26 +257,26 @@ export class FolderBrowserPanel {
           const client = createClient(conn);
           const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
           const items: { label: string; value: string }[] = [
-            { label: 'Key', value: item.key },
-            { label: 'Type', value: item.isFolder ? 'Folder' : 'File' },
-            { label: 'Size', value: item.size != null ? formatSize(item.size) : '-' },
-            { label: 'Last Modified', value: item.lastModified ? new Date(item.lastModified).toISOString() : '-' },
+            { label: t('msg_infoKey'), value: item.key },
+            { label: t('msg_infoType'), value: item.isFolder ? t('msg_infoFolder') : t('msg_infoFile') },
+            { label: t('msg_infoSize'), value: item.size != null ? formatSize(item.size) : '-' },
+            { label: t('msg_infoLastModified'), value: item.lastModified ? new Date(item.lastModified).toISOString() : '-' },
           ];
           try {
             const head = await client.send(new HeadObjectCommand({ Bucket: conn.bucket, Key: item.key }));
-            if (head.ETag) items.push({ label: 'ETag', value: head.ETag.replace(/"/g, '') });
-            if (head.ContentType) items.push({ label: 'Content-Type', value: head.ContentType });
-            if (head.ContentEncoding) items.push({ label: 'Content-Encoding', value: head.ContentEncoding });
-            if (head.StorageClass) items.push({ label: 'Storage Class', value: head.StorageClass });
-            if (head.VersionId) items.push({ label: 'Version ID', value: head.VersionId });
-            if (head.ContentDisposition) items.push({ label: 'Content-Disposition', value: head.ContentDisposition });
-            if (head.CacheControl) items.push({ label: 'Cache-Control', value: head.CacheControl });
-            if (head.ServerSideEncryption) items.push({ label: 'Encryption', value: head.ServerSideEncryption });
-            if (head.SSEKMSKeyId) items.push({ label: 'KMS Key ID', value: head.SSEKMSKeyId });
-            if (head.WebsiteRedirectLocation) items.push({ label: 'Website Redirect', value: head.WebsiteRedirectLocation });
+            if (head.ETag) items.push({ label: t('msg_infoETag'), value: head.ETag.replace(/"/g, '') });
+            if (head.ContentType) items.push({ label: t('msg_infoContentType'), value: head.ContentType });
+            if (head.ContentEncoding) items.push({ label: t('msg_infoContentEncoding'), value: head.ContentEncoding });
+            if (head.StorageClass) items.push({ label: t('msg_infoStorageClass'), value: head.StorageClass });
+            if (head.VersionId) items.push({ label: t('msg_infoVersionId'), value: head.VersionId });
+            if (head.ContentDisposition) items.push({ label: t('msg_infoContentDisposition'), value: head.ContentDisposition });
+            if (head.CacheControl) items.push({ label: t('msg_infoCacheControl'), value: head.CacheControl });
+            if (head.ServerSideEncryption) items.push({ label: t('msg_infoEncryption'), value: head.ServerSideEncryption });
+            if (head.SSEKMSKeyId) items.push({ label: t('msg_infoKmsKeyId'), value: head.SSEKMSKeyId });
+            if (head.WebsiteRedirectLocation) items.push({ label: t('msg_infoWebsiteRedirect'), value: head.WebsiteRedirectLocation });
             if (head.Metadata && Object.keys(head.Metadata).length > 0) {
               for (const [k, v] of Object.entries(head.Metadata)) {
-                items.push({ label: `Metadata: ${k}`, value: v || '' });
+                items.push({ label: t('msg_infoMetadata', k), value: v || '' });
               }
             }
           } catch { /* use basic info */ }
@@ -282,13 +285,13 @@ export class FolderBrowserPanel {
             description: i.value,
           }));
           const pick = await vscode.window.showQuickPick(picks, {
-            title: `Info: ${item.key}`,
-            placeHolder: 'Click to copy value',
+            title: t('msg_infoTitle', item.key),
+            placeHolder: t('msg_bucketInfoPlaceholder'),
             matchOnDescription: true,
           });
           if (pick) {
             vscode.env.clipboard.writeText(pick.description || '');
-            vscode.window.setStatusBarMessage(`$(link) Copied: ${pick.description}`, 2000);
+            vscode.window.setStatusBarMessage(`$(link) ${t('msg_copiedPath', pick.description)}`, 2000);
           }
           break;
         }
@@ -302,7 +305,7 @@ export class FolderBrowserPanel {
           if (!uri) return;
           const client = createClient(conn);
           await vscode.window.withProgress(
-            { location: vscode.ProgressLocation.Notification, title: `Downloading ${item.key}` },
+            { location: vscode.ProgressLocation.Notification, title: t('msg_downloading', item.key) },
             () => downloadFile(client, conn.bucket, item.key, uri.fsPath)
           );
           break;
@@ -315,7 +318,7 @@ export class FolderBrowserPanel {
           if (this.singleFileKey) {
             this.render();
             await vscode.window.withProgress(
-              { location: vscode.ProgressLocation.Window, title: 'Refreshing...' },
+              { location: vscode.ProgressLocation.Window, title: t('msg_refreshing') },
               async () => {
                 const conn = this.connectionManager.getConnection(this.connectionId);
                 if (!conn) return;
@@ -325,7 +328,7 @@ export class FolderBrowserPanel {
                   const head = await client.send(new HeadObjectCommand({ Bucket: conn.bucket, Key: this.singleFileKey! }));
                   this.items = [{ key: this.singleFileKey!, isFolder: false, size: head.ContentLength, lastModified: head.LastModified }];
                 } catch {
-                  vscode.window.showInformationMessage(`File no longer exists: ${this.singleFileKey}`);
+                  vscode.window.showInformationMessage(t('msg_fileNoLongerExists', this.singleFileKey!));
                   this.singleFileKey = undefined;
                   this.items = [];
                   this.nextToken = undefined;
@@ -339,7 +342,7 @@ export class FolderBrowserPanel {
             this.nextToken = undefined;
             this.render();
             await vscode.window.withProgress(
-              { location: vscode.ProgressLocation.Window, title: 'Refreshing...' },
+              { location: vscode.ProgressLocation.Window, title: t('msg_refreshing') },
               () => this.loadItems()
             );
           }
@@ -351,14 +354,14 @@ export class FolderBrowserPanel {
           if (!conn) return;
           const uris = await vscode.window.showOpenDialog({
             canSelectMany: true,
-            title: `Upload to ${this.prefix || '/'}`,
+            title: t('msg_uploadTitle', this.prefix || '/'),
           });
           if (!uris || uris.length === 0) return;
           const client = createClient(conn);
           let successCount = 0;
           let failCount = 0;
           await vscode.window.withProgress(
-            { location: vscode.ProgressLocation.Window, title: 'Uploading...' },
+            { location: vscode.ProgressLocation.Window, title: t('msg_uploading', uris.length) },
             async (progress) => {
               for (let i = 0; i < uris.length; i++) {
                 const fileName = path.basename(uris[i].fsPath);
@@ -369,7 +372,7 @@ export class FolderBrowserPanel {
                   successCount++;
                 } catch (err: any) {
                   failCount++;
-                  vscode.window.showErrorMessage(`Upload failed: ${fileName} - ${err.message}`);
+                  vscode.window.showErrorMessage(t('msg_uploadFailed', fileName, err.message));
                 }
               }
             }
@@ -393,9 +396,9 @@ export class FolderBrowserPanel {
             this.render();
           }
           if (failCount > 0 && successCount > 0) {
-            vscode.window.showWarningMessage(`Uploaded ${successCount} file(s), ${failCount} failed`);
+            vscode.window.showWarningMessage(t('msg_uploadWarn', successCount, failCount));
           } else if (successCount > 0 && failCount === 0) {
-            vscode.window.showInformationMessage(`Uploaded ${successCount} file(s) successfully`);
+            vscode.window.showInformationMessage(t('msg_uploaded', successCount));
           }
           break;
         }
@@ -435,7 +438,7 @@ export class FolderBrowserPanel {
                 this.render();
                 this.panel.webview.postMessage({ type: 'highlight', name: lastSegment });
               } catch {
-                vscode.window.showInformationMessage(`File not found: ${fullKey}`);
+                vscode.window.showInformationMessage(t('msg_fileNotFound', fullKey));
                 this.prefix = this.prefix || '';
             this.items = [];
             this.nextToken = undefined;
@@ -458,7 +461,7 @@ export class FolderBrowserPanel {
             this.nextToken = undefined;
             this.render();
             await vscode.window.withProgress(
-              { location: vscode.ProgressLocation.Notification, title: `Searching "${pattern}" in ${this.prefix || '/'}...` },
+              { location: vscode.ProgressLocation.Notification, title: t('msg_searching', pattern) },
               async () => {
                 if (mode === 'prefix') {
                   await this.loadAllSearchPages();
@@ -468,7 +471,7 @@ export class FolderBrowserPanel {
               }
             );
             if (this.items.length === 0) {
-              vscode.window.showInformationMessage(`No items matching "${pattern}" found`);
+              vscode.window.showInformationMessage(t('msg_searchNoResults'));
             }
             this.render();
           }
@@ -486,7 +489,7 @@ export class FolderBrowserPanel {
           let successCount = 0;
           let failCount = 0;
           await vscode.window.withProgress(
-            { location: vscode.ProgressLocation.Window, title: 'Uploading...' },
+            { location: vscode.ProgressLocation.Window, title: t('msg_uploading', files.length) },
             async (progress) => {
               for (let i = 0; i < files.length; i++) {
                 const { fileName, content } = files[i];
@@ -499,7 +502,7 @@ export class FolderBrowserPanel {
                   successCount++;
                 } catch (err: any) {
                   failCount++;
-                  vscode.window.showErrorMessage(`Upload failed: ${fileName} - ${err.message}`);
+                  vscode.window.showErrorMessage(t('msg_uploadFailed', fileName, err.message));
                 }
               }
             }
@@ -522,9 +525,9 @@ export class FolderBrowserPanel {
             this.render();
           }
           if (failCount > 0 && successCount > 0) {
-            vscode.window.showWarningMessage(`Uploaded ${successCount} file(s), ${failCount} failed`);
+            vscode.window.showWarningMessage(t('msg_uploadWarn', successCount, failCount));
           } else if (successCount > 0 && failCount === 0) {
-            vscode.window.showInformationMessage(`Uploaded ${successCount} file(s) successfully`);
+            vscode.window.showInformationMessage(t('msg_uploaded', successCount));
           }
           break;
         }
@@ -572,7 +575,7 @@ export class FolderBrowserPanel {
         this.render();
         this.panel.webview.postMessage({ type: 'highlight', name: targetFile });
       } catch {
-        vscode.window.showInformationMessage(`File not found: ${fullKey}`);
+        vscode.window.showInformationMessage(t('msg_fileNotFound', fullKey));
         this.items = [];
         this.nextToken = undefined;
         this.loading = false;
@@ -1104,7 +1107,7 @@ body {
 <div class="top-section">
 <div class="header">
   <button class="back-btn" id="backBtn" ${!prefix ? 'disabled' : ''}>${backSvg}</button>
-  <input class="path-input" id="pathInput" value="${escapeHtml(prefix || '/')}" title="Enter path and press Enter to navigate">
+  <input class="path-input" id="pathInput" value="${escapeHtml(prefix || '/')}" title="${t('wv_pathInputTitle')}">
   <button class="icon-btn" id="refreshBtn" ${refreshing ? 'disabled' : ''}>${refreshSvg}</button>
   <button class="icon-btn" id="uploadBtn">${uploadSvg}</button>
   <div class="history-dropdown" id="historyDropdown"></div>
@@ -1130,13 +1133,14 @@ ${loadMoreBtn}
 <div class="cm" id="ctxMenu"></div>
 <script>
 const vscodeApi = acquireVsCodeApi();
-const l10n = ${JSON.stringify({
+  const l10n = ${JSON.stringify({
     rename: t('wv_rename'),
     download: t('wv_download'),
     delete: t('wv_delete'),
     copyPath: t('wv_copyPath'),
     info: t('wv_info'),
     selected: t('wv_selected'),
+    tooLarge: t('msg_tooLarge'),
   })};
   const actionIcons2 = ${JSON.stringify(actionIcons || {})};
 
@@ -1318,7 +1322,7 @@ document.addEventListener('drop', async e => {
   const tasks = [];
   for (const file of files) {
     if (file.size > maxSize) {
-      vscodeApi.postMessage({ type: 'showError', text: 'File too large (max 100MB): ' + file.name });
+      vscodeApi.postMessage({ type: 'showError', text: l10n.tooLarge.replace('{0}', file.name) });
       continue;
     }
     tasks.push(new Promise(resolve => {
