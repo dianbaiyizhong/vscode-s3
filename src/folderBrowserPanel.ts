@@ -779,12 +779,24 @@ function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loadin
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  padding: 12px 16px;
+  padding: 0;
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
   color: var(--vscode-foreground);
   background: var(--vscode-editor-background);
-  overflow-y: scroll;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+.top-section {
+  padding: 12px 16px 0 16px;
+  flex-shrink: 0;
+}
+.content-section {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 16px 12px 16px;
 }
 .header {
   display: flex;
@@ -1089,6 +1101,7 @@ body {
 </head>
 <body>
 <div class="drag-overlay" id="dragOverlay">${t('wv_dropUpload')}</div>
+<div class="top-section">
 <div class="header">
   <button class="back-btn" id="backBtn" ${!prefix ? 'disabled' : ''}>${backSvg}</button>
   <input class="path-input" id="pathInput" value="${escapeHtml(prefix || '/')}" title="Enter path and press Enter to navigate">
@@ -1107,10 +1120,13 @@ body {
   </select>
   <input class="filter-input" id="filterInput" type="text" placeholder="${t('wv_filterPlaceholder')}" value="${searchPattern ? escapeHtml(searchPattern) : ''}"${searchPattern ? ' data-searching="1"' : ''} autocomplete="off">
 </div>
-${emptyState}
 ${headerRow}
+</div>
+<div class="content-section" id="contentSection">
+${emptyState}
 ${allRows}
 ${loadMoreBtn}
+</div>
 <div class="cm" id="ctxMenu"></div>
 <script>
 const vscodeApi = acquireVsCodeApi();
@@ -1128,11 +1144,10 @@ let sortCol = '';
 let sortDir = 1;
 function sortBy(col) {
   if (sortCol === col) sortDir *= -1; else { sortCol = col; sortDir = 1; }
-  const container = document.body;
+  const container = document.getElementById('contentSection');
   const items = Array.from(document.querySelectorAll('.item'));
-  const header = document.querySelector('.list-header');
   const loadMoreBtn = document.getElementById('loadMoreBtn');
-  const refNode = loadMoreBtn || header?.nextSibling || null;
+  const refNode = loadMoreBtn || null;
   const headers = document.querySelectorAll('.list-header .sort-icon');
   headers.forEach(h => h.textContent = '');
   const activeHeader = document.querySelectorAll('.list-header > span')[['name','size','date'].indexOf(col) + 2];
