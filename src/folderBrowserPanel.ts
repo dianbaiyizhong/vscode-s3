@@ -245,6 +245,50 @@ export class FolderBrowserPanel {
           this.render();
           break;
         }
+        case 'downloadSelected': {
+          const conn = this.connectionManager.getConnection(this.connectionId);
+          if (!conn) return;
+          const items = message.items as { key: string; isFolder: boolean }[];
+          if (!items || items.length === 0) break;
+          const files = items.filter(i => !i.isFolder);
+          if (files.length === 0) {
+            vscode.window.showInformationMessage(t('msg_downloadSelectedNoFiles'));
+            break;
+          }
+          const uris = await vscode.window.showOpenDialog({
+            canSelectFolders: true,
+            canSelectMany: false,
+            title: t('msg_downloadSelectedTitle', files.length),
+          });
+          if (!uris || uris.length === 0) return;
+          const destDir = uris[0].fsPath;
+          const client = createClient(conn);
+          let successCount = 0;
+          let failCount = 0;
+          await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: t('msg_downloadingMany', files.length) },
+            async (progress) => {
+              for (let i = 0; i < files.length; i++) {
+                const fileName = files[i].key.split('/').pop() || files[i].key;
+                progress.report({ message: `${i + 1}/${files.length} ${fileName}` });
+                try {
+                  const destPath = path.join(destDir, fileName);
+                  await downloadFile(client, conn.bucket, files[i].key, destPath);
+                  successCount++;
+                } catch (err: any) {
+                  failCount++;
+                  vscode.window.showErrorMessage(t('msg_downloadFailed', `${fileName}: ${err.message}`));
+                }
+              }
+            }
+          );
+          if (failCount > 0 && successCount > 0) {
+            vscode.window.showWarningMessage(t('msg_downloadedWarn', successCount, failCount));
+          } else if (successCount > 0 && failCount === 0) {
+            vscode.window.showInformationMessage(t('msg_downloadedMany', successCount, destDir));
+          }
+          break;
+        }
         case 'copyPath': {
           const item = message.item as S3ObjectInfo;
           vscode.env.clipboard.writeText(item.key);
@@ -971,6 +1015,8 @@ body {
   position: relative;
 }
 .icon-btn:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground); }
+.icon-btn:disabled { opacity: 0.3; cursor: default; }
+.icon-btn:disabled:hover { opacity: 0.3; background: none; }
 .icon-btn::after {
   content: attr(title);
   position: absolute;
@@ -989,29 +1035,13 @@ body {
   z-index: 999;
 }
 .icon-btn:hover::after { opacity: 1; }
-.sel-bar {
-  display: none;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  margin-bottom: 8px;
-  background: var(--vscode-list-activeSelectionBackground);
-  color: var(--vscode-list-activeSelectionForeground);
-  border-radius: 3px;
-  font-size: 13px;
+.header-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--vscode-panel-border);
+  margin: 0 4px;
+  flex-shrink: 0;
 }
-.sel-bar.show { display: flex; }
-.sel-bar .count { flex: 1; }
-.sel-bar .del-btn {
-  background: var(--vscode-button-secondaryBackground);
-  color: var(--vscode-button-secondaryForeground);
-  border: none;
-  padding: 3px 10px;
-  cursor: pointer;
-  border-radius: 3px;
-  font-size: 12px;
-}
-.sel-bar .del-btn:hover { background: var(--vscode-button-secondaryHoverBackground); }
 .filter-input {
   width: 100%;
   padding: 5px 8px;
@@ -1239,11 +1269,10 @@ body {
   <button class="icon-btn" id="refreshBtn" title="${t('wv_refresh')}" ${refreshing ? 'disabled' : ''}>${refreshSvg}</button>
   <button class="icon-btn" id="newFolderBtn" title="${t('cmd_newFolder')}">${newFolderSvg}</button>
   <button class="icon-btn" id="uploadBtn" title="${t('wv_upload')}">${uploadSvg}</button>
+  <span class="header-sep"></span>
+  <button class="icon-btn" id="dlBatchBtn" title="${t('wv_downloadSelected')}" disabled>${iconDownload}</button>
+  <button class="icon-btn" id="delBatchBtn" title="${t('wv_deleteSelected')}" disabled>${iconDelete}</button>
   <div class="history-dropdown" id="historyDropdown"></div>
-</div>
-<div class="sel-bar" id="selBar">
-  <span class="count" id="selCount" data-format="${t('wv_selected')}">${t('wv_selected', '0')}</span>
-  <button class="del-btn" id="delSelectedBtn">${t('wv_deleteSelected')}</button>
 </div>
 <div class="search-mode">
   <select id="searchModeSelect">
@@ -1269,7 +1298,6 @@ const vscodeApi = acquireVsCodeApi();
     delete: t('wv_delete'),
     copyPath: t('wv_copyPath'),
     info: t('wv_info'),
-    selected: t('wv_selected'),
     tooLarge: t('msg_tooLarge'),
     newFolder: t('cmd_newFolder'),
   })};
@@ -1358,35 +1386,30 @@ window.addEventListener('message', e => {
 });
 
 // selection
-const selBar = document.getElementById('selBar');
-const selCount = document.getElementById('selCount');
-const delBtn = document.getElementById('delSelectedBtn');
+const dlBatchBtn = document.getElementById('dlBatchBtn');
+const delBatchBtn = document.getElementById('delBatchBtn');
+
+function getSelectedItems() {
+  const checked = document.querySelectorAll('.item-cb:checked');
+  return Array.from(checked).map(cb => JSON.parse(cb.closest('.item').dataset.item));
+}
 
 document.addEventListener('change', e => {
   const cb = e.target.closest('.item-cb');
   if (!cb) return;
   cb.closest('.item').classList.toggle('selected', cb.checked);
-  updateSelBar();
+  dlBatchBtn.disabled = !document.querySelectorAll('.item-cb:checked').length;
+  delBatchBtn.disabled = !document.querySelectorAll('.item-cb:checked').length;
 });
 
-function updateSelBar() {
-  const checked = document.querySelectorAll('.item-cb:checked');
-  if (checked.length === 0) {
-    selBar.classList.remove('show');
-    return;
-  }
-  selBar.classList.add('show');
-  const fmt = selCount.dataset.format || '{0} selected';
-  selCount.textContent = fmt.replace('{0}', checked.length);
-}
+dlBatchBtn.addEventListener('click', () => {
+  if (dlBatchBtn.disabled) return;
+  vscodeApi.postMessage({ type: 'downloadSelected', items: getSelectedItems() });
+});
 
-delBtn.addEventListener('click', () => {
-  const checked = document.querySelectorAll('.item-cb:checked');
-  const items = Array.from(checked).map(cb => {
-    const el = cb.closest('.item');
-    return JSON.parse(el.dataset.item);
-  });
-  vscodeApi.postMessage({ type: 'deleteSelected', items });
+delBatchBtn.addEventListener('click', () => {
+  if (delBatchBtn.disabled) return;
+  vscodeApi.postMessage({ type: 'deleteSelected', items: getSelectedItems() });
 });
 
 // context menu
