@@ -453,7 +453,7 @@ export class FolderBrowserPanel {
           } else {
             this.singleFileKey = undefined;
             this.searchPattern = pattern;
-            if (mode === 'prefix') {
+            if (mode === 'prefix' || mode === 'exact') {
               this.searchPrefix = this.prefix + pattern;
             } else {
               this.searchPrefix = undefined;
@@ -570,24 +570,57 @@ export class FolderBrowserPanel {
       return;
     }
 
+    const trimmed = rawPath.replace(/\/$/, '');
+    const lastSlash = trimmed.lastIndexOf('/');
+    const lastSegment = lastSlash === -1 ? trimmed : trimmed.substring(lastSlash + 1);
+    const parentPrefix = lastSlash === -1 ? '' : trimmed.substring(0, lastSlash + 1);
+
     const client = createClient(conn);
-    const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+    const { HeadObjectCommand, ListObjectsV2Command } = await import('@aws-sdk/client-s3');
+
+    let fileExists = false;
     try {
-      const head = await client.send(new HeadObjectCommand({ Bucket: conn.bucket, Key: rawPath }));
+      await client.send(new HeadObjectCommand({ Bucket: conn.bucket, Key: rawPath }));
+      fileExists = true;
+    } catch { /* file doesn't exist */ }
+
+    const folderKey = rawPath.endsWith('/') ? rawPath : rawPath + '/';
+    let folderExists = false;
+    try {
+      const listResp = await client.send(new ListObjectsV2Command({
+        Bucket: conn.bucket, Prefix: folderKey, Delimiter: '/', MaxKeys: 1,
+      }));
+      folderExists = (listResp.CommonPrefixes && listResp.CommonPrefixes.length > 0)
+        || listResp.KeyCount !== undefined && listResp.KeyCount > 0;
+    } catch { /* folder doesn't exist */ }
+
+    if (fileExists && folderExists) {
+      this.singleFileKey = undefined;
+      this.prefix = parentPrefix;
+      this.items = [];
+      this.nextToken = undefined;
+      this.loading = false;
+      this.onNavigate(this.connectionId, parentPrefix);
+      this.render();
+      await this.loadItems();
+      this.items = this.items.filter(i => {
+        const name = i.key.replace(/\/$/, '').split('/').pop()?.toLowerCase();
+        return name === lastSegment.toLowerCase();
+      });
+      this.render();
+      this.panel.webview.postMessage({ type: 'highlight', name: lastSegment });
+    } else if (fileExists) {
       this.singleFileKey = rawPath;
-      const trimmed = rawPath.replace(/\/$/, '');
-      const lastSlash = trimmed.lastIndexOf('/');
-      const lastSegment = lastSlash === -1 ? trimmed : trimmed.substring(lastSlash + 1);
-      this.prefix = lastSlash === -1 ? '' : trimmed.substring(0, lastSlash + 1);
-      this.items = [{ key: rawPath, isFolder: false, size: head.ContentLength, lastModified: head.LastModified }];
+      this.prefix = parentPrefix;
+      this.items = [{ key: rawPath, isFolder: false }];
       this.nextToken = undefined;
       this.loading = false;
       this.onNavigate(this.connectionId, rawPath);
       this.render();
       this.panel.webview.postMessage({ type: 'highlight', name: lastSegment });
-    } catch {
+    } else if (folderExists) {
       this.singleFileKey = undefined;
-      this.prefix = rawPath.endsWith('/') ? rawPath : rawPath + '/';
+      this.prefix = folderKey;
       this.items = [];
       this.nextToken = undefined;
       this.loading = false;
@@ -595,6 +628,17 @@ export class FolderBrowserPanel {
       this.render();
       await this.loadItems();
       this.render();
+    } else {
+      this.singleFileKey = undefined;
+      this.prefix = parentPrefix;
+      this.items = [];
+      this.nextToken = undefined;
+      this.loading = false;
+      this.onNavigate(this.connectionId, parentPrefix);
+      this.render();
+      await this.loadItems();
+      this.render();
+      vscode.window.showInformationMessage(t('msg_fileNotFound', rawPath));
     }
   }
 
@@ -673,17 +717,14 @@ export class FolderBrowserPanel {
 
       const client = createClient(conn);
       const lower = this.searchPattern!.toLowerCase();
+      this.searchPrefix = this.prefix + this.searchPattern;
 
-      let cursor: string | undefined;
-      for (let i = 0; i < 50; i++) {
-        if (this.items.length > 0) break;
-        const result = await listObjects(client, conn.bucket, this.prefix, 1, undefined, cursor, 1000);
-        const matched = result.items.filter(i => i.key.replace(/\/$/, '').split('/').pop()?.toLowerCase() === lower);
-        this.items.push(...matched);
-        cursor = result.nextToken;
-        if (!cursor) break;
-      }
-      this.nextToken = cursor;
+      const result = await listObjects(client, conn.bucket, this.searchPrefix, 1);
+      this.items = result.items.filter(i => {
+        const name = i.key.replace(/\/$/, '').split('/').pop()?.toLowerCase();
+        return name === lower;
+      });
+      this.nextToken = undefined;
     } finally {
       this.loading = false;
     }

@@ -169,7 +169,6 @@ export async function listObjects(
 
   for (const obj of allContents) {
     if (!obj.Key) continue;
-    if (obj.Key === prefix) continue;
     if (obj.Key.endsWith('/')) continue;
     items.push({
       key: obj.Key,
