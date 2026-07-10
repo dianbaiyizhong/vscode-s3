@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { createClient, listObjects, uploadFile, downloadFile, deleteObject, deleteFolder, renameObject, renameFolder, S3ObjectInfo } from './s3Client';
+import { createClient, listObjects, uploadFile, downloadFile, deleteObject, deleteFolder, renameObject, renameFolder, createFolder, S3ObjectInfo } from './s3Client';
 import { ConnectionManager } from './connectionManager';
 import { JumpRecord } from './jumpHistory';
 import { t } from './i18n';
@@ -350,6 +350,39 @@ export class FolderBrowserPanel {
           this.refreshing = false;
           this.render();
           break;
+        case 'newFolder': {
+          const conn = this.connectionManager.getConnection(this.connectionId);
+          if (!conn) break;
+          const folderName = await vscode.window.showInputBox({
+            title: t('prompt_newFolderName'),
+            placeHolder: t('prompt_newFolder_placeholder'),
+            ignoreFocusOut: true,
+            validateInput: (val) => {
+              if (!val) return t('val_empty');
+              if (val.includes('/')) return t('val_slash');
+              return undefined;
+            },
+          });
+          if (!folderName) break;
+          const client = createClient(conn);
+          await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: t('msg_creatingFolder') },
+            async () => {
+              try {
+                await createFolder(client, conn.bucket, this.prefix + folderName);
+                this.items = [];
+                this.nextToken = undefined;
+                this.loading = false;
+                await this.loadItems();
+                this.render();
+                vscode.window.showInformationMessage(t('msg_folderCreated', folderName));
+              } catch (err: any) {
+                vscode.window.showErrorMessage(t('msg_folderFailed', err.message));
+              }
+            }
+          );
+          break;
+        }
         case 'upload': {
           const conn = this.connectionManager.getConnection(this.connectionId);
           if (!conn) return;
@@ -789,6 +822,7 @@ function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loadin
   const backSvg = backIcon || '&#x2190;';
   const refreshSvg = (actionIcons && actionIcons['refresh']) || '&#x21BB;';
   const uploadSvg = (actionIcons && actionIcons['upload']) || '&#x2B06;';
+  const newFolderSvg = (actionIcons && actionIcons['newfolder']) || '&#x1F4C1;';
   const iconInfo = (actionIcons && actionIcons['info']) || '&#x2139;';
   const iconRename = (actionIcons && actionIcons['rename']) || '&#x270F;';
   const iconDelete = (actionIcons && actionIcons['delete']) || '&#x1F5D1;';
@@ -934,8 +968,27 @@ body {
   opacity: 0.7;
   display: flex;
   align-items: center;
+  position: relative;
 }
 .icon-btn:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground); }
+.icon-btn::after {
+  content: attr(title);
+  position: absolute;
+  bottom: -28px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--vscode-editorWidget-background, #333);
+  color: var(--vscode-editorWidget-foreground, #fff);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 999;
+}
+.icon-btn:hover::after { opacity: 1; }
 .sel-bar {
   display: none;
   align-items: center;
@@ -1016,7 +1069,8 @@ body {
 .item-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item-meta { font-size: 11px; color: var(--vscode-descriptionForeground); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .item-date { font-size: 11px; color: var(--vscode-descriptionForeground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.item-actions { display: flex; gap: 2px; }
+.item-actions { display: flex; gap: 2px; opacity: 0; }
+.item:hover .item-actions { opacity: 1; }
 .action {
   display: inline-flex;
   align-items: center;
@@ -1182,8 +1236,9 @@ body {
 <div class="header">
   <button class="back-btn" id="backBtn" ${!prefix ? 'disabled' : ''}>${backSvg}</button>
   <input class="path-input" id="pathInput" value="${escapeHtml(prefix || '/')}" title="${t('wv_pathInputTitle')}">
-  <button class="icon-btn" id="refreshBtn" ${refreshing ? 'disabled' : ''}>${refreshSvg}</button>
-  <button class="icon-btn" id="uploadBtn">${uploadSvg}</button>
+  <button class="icon-btn" id="refreshBtn" title="${t('wv_refresh')}" ${refreshing ? 'disabled' : ''}>${refreshSvg}</button>
+  <button class="icon-btn" id="newFolderBtn" title="${t('cmd_newFolder')}">${newFolderSvg}</button>
+  <button class="icon-btn" id="uploadBtn" title="${t('wv_upload')}">${uploadSvg}</button>
   <div class="history-dropdown" id="historyDropdown"></div>
 </div>
 <div class="sel-bar" id="selBar">
@@ -1216,6 +1271,7 @@ const vscodeApi = acquireVsCodeApi();
     info: t('wv_info'),
     selected: t('wv_selected'),
     tooLarge: t('msg_tooLarge'),
+    newFolder: t('cmd_newFolder'),
   })};
   const actionIcons2 = ${JSON.stringify(actionIcons || {})};
 
@@ -1445,6 +1501,9 @@ if (backBtn && !backBtn.disabled) {
   });
 }
 
+document.getElementById('newFolderBtn')?.addEventListener('click', () => {
+  vscodeApi.postMessage({ type: 'newFolder' });
+});
 document.getElementById('uploadBtn')?.addEventListener('click', () => {
   vscodeApi.postMessage({ type: 'upload' });
 });
