@@ -412,9 +412,9 @@ export class FolderBrowserPanel {
             const trimmed = pattern.replace(/\/$/, '');
             const lastSlash = trimmed.lastIndexOf('/');
             const lastSegment = lastSlash === -1 ? pattern : trimmed.substring(lastSlash + 1);
-            if (pattern.endsWith('/') || !lastSegment.includes('.')) {
+            if (pattern.endsWith('/')) {
               this.singleFileKey = undefined;
-              this.prefix = pattern.endsWith('/') ? pattern : pattern + '/';
+              this.prefix = pattern;
               this.items = [];
               this.nextToken = undefined;
               this.loading = false;
@@ -438,12 +438,11 @@ export class FolderBrowserPanel {
                 this.render();
                 this.panel.webview.postMessage({ type: 'highlight', name: lastSegment });
               } catch {
-                vscode.window.showInformationMessage(t('msg_fileNotFound', fullKey));
-                this.prefix = this.prefix || '';
-            this.items = [];
-            this.nextToken = undefined;
-            this.singleFileKey = undefined;
-            this.loading = false;
+                this.singleFileKey = undefined;
+                this.prefix = pattern.endsWith('/') ? pattern : pattern + '/';
+                this.items = [];
+                this.nextToken = undefined;
+                this.loading = false;
                 this.render();
                 await this.loadItems();
                 this.render();
@@ -540,51 +539,55 @@ export class FolderBrowserPanel {
     const conn = this.connectionManager.getConnection(this.connectionId);
     if (!conn) return;
     if (!rawPath) return;
-    let newPrefix: string;
-    let targetFile: string | undefined;
+
     if (rawPath === '/') {
-      newPrefix = '';
-    } else if (rawPath.endsWith('/')) {
-      newPrefix = rawPath;
-    } else {
+      this.prefix = '';
+      this.singleFileKey = undefined;
+      this.items = [];
+      this.nextToken = undefined;
+      this.loading = false;
+      this.onNavigate(this.connectionId, '');
+      this.render();
+      await this.loadItems();
+      this.render();
+      return;
+    }
+
+    if (rawPath.endsWith('/')) {
+      this.prefix = rawPath;
+      this.singleFileKey = undefined;
+      this.items = [];
+      this.nextToken = undefined;
+      this.loading = false;
+      this.onNavigate(this.connectionId, rawPath);
+      this.render();
+      await this.loadItems();
+      this.render();
+      return;
+    }
+
+    const client = createClient(conn);
+    const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+    try {
+      const head = await client.send(new HeadObjectCommand({ Bucket: conn.bucket, Key: rawPath }));
+      this.singleFileKey = rawPath;
       const trimmed = rawPath.replace(/\/$/, '');
       const lastSlash = trimmed.lastIndexOf('/');
       const lastSegment = lastSlash === -1 ? trimmed : trimmed.substring(lastSlash + 1);
-      if (lastSegment.includes('.')) {
-        newPrefix = lastSlash === -1 ? '' : trimmed.substring(0, lastSlash + 1);
-        targetFile = lastSegment;
-      } else {
-        newPrefix = rawPath + '/';
-      }
-    }
-    this.prefix = newPrefix;
-    this.items = [];
-    this.nextToken = undefined;
-    this.loading = false;
-    this.onNavigate(this.connectionId, targetFile ? rawPath : newPrefix);
-    if (targetFile) {
-      this.singleFileKey = undefined;
+      this.prefix = lastSlash === -1 ? '' : trimmed.substring(0, lastSlash + 1);
+      this.items = [{ key: rawPath, isFolder: false, size: head.ContentLength, lastModified: head.LastModified }];
+      this.nextToken = undefined;
+      this.loading = false;
+      this.onNavigate(this.connectionId, rawPath);
       this.render();
-      const fullKey = rawPath;
-      const client = createClient(conn);
-      const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
-      try {
-        const head = await client.send(new HeadObjectCommand({ Bucket: conn.bucket, Key: fullKey }));
-        this.singleFileKey = fullKey;
-        this.items = [{ key: fullKey, isFolder: false, size: head.ContentLength, lastModified: head.LastModified }];
-        this.render();
-        this.panel.webview.postMessage({ type: 'highlight', name: targetFile });
-      } catch {
-        vscode.window.showInformationMessage(t('msg_fileNotFound', fullKey));
-        this.items = [];
-        this.nextToken = undefined;
-        this.loading = false;
-        this.render();
-        await this.loadItems();
-        this.render();
-      }
-    } else {
+      this.panel.webview.postMessage({ type: 'highlight', name: lastSegment });
+    } catch {
       this.singleFileKey = undefined;
+      this.prefix = rawPath.endsWith('/') ? rawPath : rawPath + '/';
+      this.items = [];
+      this.nextToken = undefined;
+      this.loading = false;
+      this.onNavigate(this.connectionId, this.prefix);
       this.render();
       await this.loadItems();
       this.render();
