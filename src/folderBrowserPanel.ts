@@ -31,6 +31,7 @@ export class FolderBrowserPanel {
   private loading = false;
   private refreshing = false;
   private searchPattern?: string;
+  private searchMode: string = 'prefix';
   private singleFileKey?: string;
   private searchPrefix?: string;
   private static folderIcon: string = '';
@@ -405,6 +406,7 @@ export class FolderBrowserPanel {
         case 'searchFiles': {
           const pattern = message.pattern as string;
           const mode = message.mode as string || 'prefix';
+          this.searchMode = mode;
           if (!pattern) break;
           if (pattern.includes('/')) {
             this.searchPattern = undefined;
@@ -464,6 +466,8 @@ export class FolderBrowserPanel {
               async () => {
                 if (mode === 'prefix') {
                   await this.loadAllSearchPages();
+                } else if (mode === 'exact') {
+                  await this.loadAllExactSearchPages();
                 } else {
                   await this.loadAllFuzzySearchPages();
                 }
@@ -660,6 +664,31 @@ export class FolderBrowserPanel {
     }
   }
 
+  private async loadAllExactSearchPages(): Promise<void> {
+    if (this.loading) return;
+    this.loading = true;
+    try {
+      const conn = this.connectionManager.getConnection(this.connectionId);
+      if (!conn) return;
+
+      const client = createClient(conn);
+      const lower = this.searchPattern!.toLowerCase();
+
+      let cursor: string | undefined;
+      for (let i = 0; i < 50; i++) {
+        if (this.items.length > 0) break;
+        const result = await listObjects(client, conn.bucket, this.prefix, 1, undefined, cursor, 1000);
+        const matched = result.items.filter(i => i.key.replace(/\/$/, '').split('/').pop()?.toLowerCase() === lower);
+        this.items.push(...matched);
+        cursor = result.nextToken;
+        if (!cursor) break;
+      }
+      this.nextToken = cursor;
+    } finally {
+      this.loading = false;
+    }
+  }
+
   private render(): void {
     const displayPath = this.singleFileKey || this.prefix || '/';
     this.panel.title = `${this.searchPrefix ? '🔍 ' + this.searchPrefix : displayPath} — ${this.connectionName}`;
@@ -678,6 +707,7 @@ export class FolderBrowserPanel {
       FolderBrowserPanel.extIcons,
       FolderBrowserPanel.actionIcons,
       FolderBrowserPanel.backIcon,
+      this.searchMode,
     );
   }
 }
@@ -705,7 +735,7 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loading: boolean, refreshing: boolean = false, searchPattern?: string, historyRecords?: JumpRecord[], connectionId?: string, folderSvg?: string, fileSvg?: string, extIcons?: Record<string, string>, actionIcons?: Record<string, string>, backIcon?: string): string {
+function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loading: boolean, refreshing: boolean = false, searchPattern?: string, historyRecords?: JumpRecord[], connectionId?: string, folderSvg?: string, fileSvg?: string, extIcons?: Record<string, string>, actionIcons?: Record<string, string>, backIcon?: string, searchMode?: string): string {
   const headerRow = `<div class="list-header">
     <span></span>
     <span></span>
@@ -1121,8 +1151,9 @@ body {
 </div>
 <div class="search-mode">
   <select id="searchModeSelect">
-    <option value="prefix">${t('wv_searchPrefix')}</option>
-    <option value="fuzzy">${t('wv_searchFuzzy')}</option>
+    <option value="prefix" ${searchMode === 'prefix' ? 'selected' : ''}>${t('wv_searchPrefix')}</option>
+    <option value="fuzzy" ${searchMode === 'fuzzy' ? 'selected' : ''}>${t('wv_searchFuzzy')}</option>
+    <option value="exact" ${searchMode === 'exact' ? 'selected' : ''}>${t('wv_searchExact')}</option>
   </select>
   <input class="filter-input" id="filterInput" type="text" placeholder="${t('wv_filterPlaceholder')}" value="${searchPattern ? escapeHtml(searchPattern) : ''}"${searchPattern ? ' data-searching="1"' : ''} autocomplete="off">
 </div>
