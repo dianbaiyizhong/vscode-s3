@@ -134,7 +134,7 @@ export async function listObjects(
             Prefix: prefix,
             Delimiter: '/',
             MaxKeys: mk,
-            ...(cursor ? { StartAfter: cursor } : {}),
+            ...(cursor ? { ContinuationToken: cursor } : {}),
           })
         );
         if (response.CommonPrefixes) {
@@ -145,7 +145,7 @@ export async function listObjects(
         }
         if (!response.IsTruncated) break;
         isTruncated = true;
-        cursor = getLastKey(response);
+        cursor = response.NextContinuationToken || response.NextMarker || getLastKey(response);
         if (!cursor) break;
       }
     } catch {
