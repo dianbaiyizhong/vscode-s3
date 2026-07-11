@@ -98,7 +98,6 @@ export async function listObjects(
   const allContents: { Key?: string; Size?: number; LastModified?: Date }[] = [];
 
   let cursor: string | undefined = startAfter;
-  let useV1 = false;
   let pageCount = 0;
   let isTruncated = false;
 
@@ -106,9 +105,27 @@ export async function listObjects(
   const hasMaxPages = maxPages > 0 && !targetKey;
   while (!hasMaxPages || pageCount < maxPages) {
     pageCount++;
+    let response: any;
+
+    // Try V2 first
     try {
-      if (useV1) {
-        const response = await client.send(
+      response = await client.send(
+        new ListObjectsV2Command({
+          Bucket: bucket,
+          Prefix: prefix,
+          Delimiter: '/',
+          MaxKeys: mk,
+          ...(cursor ? { StartAfter: cursor } : {}),
+        })
+      );
+    } catch {
+      response = undefined;
+    }
+
+    // Fall back to V1 if V2 failed
+    if (!response) {
+      try {
+        response = await client.send(
           new ListObjectsCommand({
             Bucket: bucket,
             Prefix: prefix,
@@ -117,40 +134,35 @@ export async function listObjects(
             Marker: cursor,
           })
         );
-        if (response.CommonPrefixes) {
-          allCommonPrefixes.push(...response.CommonPrefixes);
-        }
-        if (response.Contents) {
-          allContents.push(...response.Contents);
-        }
-        if (!response.IsTruncated) break;
-        isTruncated = true;
-        cursor = response.NextMarker || getLastKey(response);
-        if (!cursor) break;
-      } else {
-        const response = await client.send(
-          new ListObjectsV2Command({
-            Bucket: bucket,
-            Prefix: prefix,
-            Delimiter: '/',
-            MaxKeys: mk,
-            ...(cursor ? { StartAfter: cursor } : {}),
-          })
-        );
-        if (response.CommonPrefixes) {
-          allCommonPrefixes.push(...response.CommonPrefixes);
-        }
-        if (response.Contents) {
-          allContents.push(...response.Contents);
-        }
-        if (!response.IsTruncated) break;
-        isTruncated = true;
-        cursor = response.NextContinuationToken || getLastKey(response);
-        if (!cursor) break;
+      } catch {
+        break;
       }
-    } catch {
-      useV1 = true;
     }
+
+    if (response.CommonPrefixes) {
+      allCommonPrefixes.push(...response.CommonPrefixes);
+    }
+    if (response.Contents) {
+      allContents.push(...response.Contents);
+    }
+    if (!response.IsTruncated) break;
+    isTruncated = true;
+
+    // Determine next cursor: prefer server token, fall back to last key
+    if (response.NextContinuationToken || response.NextMarker) {
+      cursor = response.NextContinuationToken || response.NextMarker;
+    } else {
+      cursor = getLastKey(response);
+    }
+
+    // If still no cursor, derive from accumulated results
+    if (!cursor) {
+      const lastPrefix = allCommonPrefixes[allCommonPrefixes.length - 1]?.Prefix;
+      const lastContent = allContents[allContents.length - 1]?.Key;
+      cursor = lastContent || lastPrefix;
+    }
+
+    if (!cursor) break;
 
     if (targetKey) {
       const found = allCommonPrefixes.some(cp => cp.Prefix === targetKey) ||
