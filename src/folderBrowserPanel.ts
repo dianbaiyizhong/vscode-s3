@@ -1292,6 +1292,16 @@ ${loadMoreBtn}
 <div class="cm" id="ctxMenu"></div>
 <script>
 const vscodeApi = acquireVsCodeApi();
+  (() => {
+    const pos = sessionStorage.getItem('scrollPos');
+    if (pos) {
+      sessionStorage.removeItem('scrollPos');
+      requestAnimationFrame(() => {
+        const section = document.querySelector('.content-section');
+        if (section) section.scrollTop = Number(pos);
+      });
+    }
+  })();
   const l10n = ${JSON.stringify({
     rename: t('wv_rename'),
     download: t('wv_download'),
@@ -1514,6 +1524,8 @@ document.querySelectorAll('.folder').forEach(el => {
 });
 
 document.getElementById('loadMoreBtn')?.addEventListener('click', () => {
+  const section = document.querySelector('.content-section');
+  if (section) sessionStorage.setItem('scrollPos', String(section.scrollTop));
   vscodeApi.postMessage({ type: 'loadMore' });
 });
 

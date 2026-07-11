@@ -477,6 +477,9 @@ export async function testConnection(
     await client.send(new HeadBucketCommand({ Bucket: bucket }));
     return { ok: true };
   } catch (e: any) {
-    return { ok: false, error: e.message || String(e) };
+    const name = e.name ? `[${e.name}]` : '';
+    const message = e.message || String(e);
+    const statusCode = e.$metadata?.httpStatusCode ? ` (HTTP ${e.$metadata.httpStatusCode})` : '';
+    return { ok: false, error: `${name} ${message}${statusCode}`.trim() };
   }
 }
