@@ -145,7 +145,7 @@ export async function listObjects(
         }
         if (!response.IsTruncated) break;
         isTruncated = true;
-        cursor = getLastKey(response);
+        cursor = response.NextContinuationToken || getLastKey(response);
         if (!cursor) break;
       }
     } catch {
@@ -244,35 +244,34 @@ export async function deleteFolder(
   bucket: string,
   prefix: string
 ): Promise<void> {
-  let continuationToken: string | undefined;
+  let marker: string | undefined;
 
   while (true) {
     let objects: { Key?: string }[] | undefined;
     let truncated: boolean | undefined;
-    let nextToken: string | undefined;
 
     try {
       const response = await client.send(
         new ListObjectsV2Command({
           Bucket: bucket,
           Prefix: prefix,
-          ContinuationToken: continuationToken,
+          ...(marker ? { StartAfter: marker } : {}),
         })
       );
       objects = response.Contents;
       truncated = response.IsTruncated;
-      nextToken = response.NextContinuationToken;
+      if (truncated) marker = response.NextContinuationToken || getLastKey(response);
     } catch {
       const response = await client.send(
         new ListObjectsCommand({
           Bucket: bucket,
           Prefix: prefix,
-          Marker: continuationToken,
+          Marker: marker,
         })
       );
       objects = response.Contents;
       truncated = response.IsTruncated;
-      nextToken = response.NextMarker;
+      if (truncated) marker = response.NextMarker || getLastKey(response);
     }
 
     if (!objects || objects.length === 0) break;
@@ -297,7 +296,7 @@ export async function deleteFolder(
     }
 
     if (!truncated) break;
-    continuationToken = nextToken;
+    if (!marker) break;
   }
 }
 
@@ -328,36 +327,35 @@ export async function renameFolder(
   oldPrefix: string,
   newPrefix: string
 ): Promise<void> {
-  let continuationToken: string | undefined;
+  let marker: string | undefined;
   const objectsToCopy: { oldKey: string; newKey: string }[] = [];
 
   while (true) {
     let objects: { Key?: string }[] | undefined;
     let truncated: boolean | undefined;
-    let nextToken: string | undefined;
 
     try {
       const response = await client.send(
         new ListObjectsV2Command({
           Bucket: bucket,
           Prefix: oldPrefix,
-          ContinuationToken: continuationToken,
+          ...(marker ? { StartAfter: marker } : {}),
         })
       );
       objects = response.Contents;
       truncated = response.IsTruncated;
-      nextToken = response.NextContinuationToken;
+      if (truncated) marker = response.NextContinuationToken || getLastKey(response);
     } catch {
       const response = await client.send(
         new ListObjectsCommand({
           Bucket: bucket,
           Prefix: oldPrefix,
-          Marker: continuationToken,
+          Marker: marker,
         })
       );
       objects = response.Contents;
       truncated = response.IsTruncated;
-      nextToken = response.IsTruncated ? response.NextMarker : undefined;
+      if (truncated) marker = response.NextMarker || getLastKey(response);
     }
 
     if (!objects || objects.length === 0) break;
@@ -370,7 +368,7 @@ export async function renameFolder(
     }
 
     if (!truncated) break;
-    continuationToken = nextToken;
+    if (!marker) break;
   }
 
   for (const { oldKey, newKey } of objectsToCopy) {
