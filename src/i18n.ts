@@ -65,6 +65,7 @@ const en: Record<string, string> = {
   prompt_proxyPassword_placeholder: '(optional)',
   prompt_noProxy: 'No Proxy (comma-separated)',
   prompt_noProxy_placeholder: 'localhost,127.0.0.1',
+  prompt_isHuaweiOBS: 'Huawei Cloud OBS',
 
   // validation
   val_nameRequired: 'Name is required',
@@ -284,6 +285,7 @@ const zh: Record<string, string> = {
   prompt_proxyPassword_placeholder: '（可选）',
   prompt_noProxy: '跳过代理（逗号分隔）',
   prompt_noProxy_placeholder: 'localhost,127.0.0.1',
+  prompt_isHuaweiOBS: '华为云 OBS',
 
   val_nameRequired: '名称不能为空',
   val_invalidUrl: 'URL 格式不正确',

@@ -17,7 +17,125 @@ import { S3Connection } from './connectionManager';
 import { HttpProxyAgent } from 'http-proxy-agent';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 
-export function createClient(connection: S3Connection): S3Client {
+export interface IObjectClient {
+  send(command: any): Promise<any>;
+}
+
+class ObsClientWrapper implements IObjectClient {
+  private client: any;
+
+  constructor(connection: S3Connection) {
+    const ObsClient = require('esdk-obs-nodejs');
+    this.client = new ObsClient({
+      access_key_id: connection.accessKeyId,
+      secret_access_key: connection.secretAccessKey,
+      server: connection.endpoint,
+      ...(connection.region ? { region: connection.region } : {}),
+      ...(connection.forcePathStyle ? { path_style: true } : {}),
+    });
+  }
+
+  async send(command: any): Promise<any> {
+    const name: string = command.constructor.name || '';
+    const input = command.input || {};
+
+    if (name.includes('GetObjectTagging'))
+      return { TagSet: [] };
+
+    if (name.includes('ListObjectsV2')) {
+      const result = await this.client.listObjects({
+        ...input,
+        Marker: input.ContinuationToken || input.StartAfter,
+      });
+      const common = result.CommonMsg || {};
+      if (common.Status >= 300) this.throwError(common);
+      const data = result.InterfaceResult || result;
+      return {
+        ...data,
+        IsTruncated: !!data.IsTruncated,
+        NextContinuationToken: data.NextMarker,
+        CommonPrefixes: data.CommonPrefixes || [],
+        Contents: data.Contents || [],
+      };
+    }
+    if (name.includes('ListObjects')) {
+      const result = await this.client.listObjects(input);
+      const common = result.CommonMsg || {};
+      if (common.Status >= 300) this.throwError(common);
+      const data = result.InterfaceResult || result;
+      return {
+        ...data,
+        IsTruncated: !!data.IsTruncated,
+        CommonPrefixes: data.CommonPrefixes || [],
+        Contents: data.Contents || [],
+      };
+    }
+    if (name.includes('DeleteObjects')) {
+      const result = await this.client.deleteObjects({
+        Bucket: input.Bucket,
+        Objects: input.Delete?.Objects,
+        Quiet: input.Delete?.Quiet,
+      });
+      const common = result.CommonMsg || {};
+      if (common.Status >= 300) this.throwError(common);
+      return result.InterfaceResult || result;
+    }
+    if (name.includes('HeadBucket')) {
+      const result = await this.client.headBucket(input);
+      const common = result.CommonMsg || {};
+      if (common.Status >= 300) this.throwError(common);
+      return result;
+    }
+    if (name.includes('HeadObject')) {
+      const result = await this.client.getObjectMetadata(input);
+      const common = result.CommonMsg || {};
+      if (common.Status >= 300) this.throwError(common);
+      return result.InterfaceResult || result;
+    }
+    if (name.includes('PutObject')) {
+      const result = await this.client.putObject(input);
+      const common = result.CommonMsg || {};
+      if (common.Status >= 300) this.throwError(common);
+      return result.InterfaceResult || result;
+    }
+    if (name.includes('GetObject')) {
+      const result = await this.client.getObject(input);
+      const common = result.CommonMsg || {};
+      if (common.Status >= 300) this.throwError(common);
+      const data = result.InterfaceResult || result;
+      if (data.Body && typeof data.Body.pipe !== 'function' && typeof data.Body[Symbol.asyncIterator] !== 'function') {
+        data.Body = (async function* () { yield data.Body; })();
+      }
+      return data;
+    }
+    if (name.includes('CopyObject')) {
+      const result = await this.client.copyObject(input);
+      const common = result.CommonMsg || {};
+      if (common.Status >= 300) this.throwError(common);
+      return result.InterfaceResult || result;
+    }
+    if (name.includes('DeleteObject')) {
+      const result = await this.client.deleteObject(input);
+      const common = result.CommonMsg || {};
+      if (common.Status >= 300) this.throwError(common);
+      return result.InterfaceResult || result;
+    }
+
+    throw new Error(`Huawei OBS: unsupported command ${name}`);
+  }
+
+  private throwError(common: { Status?: number; Code?: string; Message?: string }): never {
+    const err = new Error(common.Message || `OBS Error ${common.Status}`);
+    (err as any).name = common.Code || 'OBSRequestError';
+    (err as any).$metadata = { httpStatusCode: common.Status };
+    throw err;
+  }
+}
+
+export function createClient(connection: S3Connection): IObjectClient {
+  if (connection.isHuaweiOBS) {
+    return new ObsClientWrapper(connection);
+  }
   const config: ConstructorParameters<typeof S3Client>[0] = {
     endpoint: connection.endpoint,
     region: connection.region,
@@ -86,7 +204,7 @@ function getLastKey(response: { CommonPrefixes?: { Prefix?:string }[]; Contents?
 }
 
 export async function listObjects(
-  client: S3Client,
+  client: IObjectClient,
   bucket: string,
   prefix: string = '',
   maxPages: number = 1,
@@ -187,7 +305,7 @@ export async function listObjects(
 }
 
 export async function uploadFile(
-  client: S3Client,
+  client: IObjectClient,
   bucket: string,
   key: string,
   localFilePath: string
@@ -203,7 +321,7 @@ export async function uploadFile(
 }
 
 export async function downloadFile(
-  client: S3Client,
+  client: IObjectClient,
   bucket: string,
   key: string,
   destinationPath: string
@@ -227,7 +345,7 @@ export async function downloadFile(
 }
 
 export async function deleteObject(
-  client: S3Client,
+  client: IObjectClient,
   bucket: string,
   key: string
 ): Promise<void> {
@@ -240,7 +358,7 @@ export async function deleteObject(
 }
 
 export async function deleteFolder(
-  client: S3Client,
+  client: IObjectClient,
   bucket: string,
   prefix: string
 ): Promise<void> {
@@ -302,7 +420,7 @@ export async function deleteFolder(
 }
 
 export async function renameObject(
-  client: S3Client,
+  client: IObjectClient,
   bucket: string,
   oldKey: string,
   newKey: string
@@ -323,7 +441,7 @@ export async function renameObject(
 }
 
 export async function renameFolder(
-  client: S3Client,
+  client: IObjectClient,
   bucket: string,
   oldPrefix: string,
   newPrefix: string
@@ -395,7 +513,7 @@ export async function renameFolder(
 }
 
 export async function createFolder(
-  client: S3Client,
+  client: IObjectClient,
   bucket: string,
   key: string
 ): Promise<void> {
@@ -420,7 +538,7 @@ export interface ObjectDetail {
 }
 
 export async function getObjectDetail(
-  client: S3Client,
+  client: IObjectClient,
   bucket: string,
   key: string
 ): Promise<ObjectDetail> {
@@ -447,7 +565,7 @@ export interface BucketInfo {
   buckets?: string[];
 }
 
-export async function getBucketInfo(client: S3Client, bucket: string): Promise<BucketInfo> {
+export async function getBucketInfo(client: IObjectClient, bucket: string): Promise<BucketInfo> {
   let totalObjects = 0;
   let totalSize = 0;
   let cursor: string | undefined;
@@ -470,7 +588,7 @@ export async function getBucketInfo(client: S3Client, bucket: string): Promise<B
 }
 
 export async function testConnection(
-  client: S3Client,
+  client: IObjectClient,
   bucket: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {

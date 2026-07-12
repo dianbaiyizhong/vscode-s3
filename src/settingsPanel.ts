@@ -45,7 +45,7 @@ export class SettingsPanel {
           break;
         case 'add':
           this.editingId = undefined;
-          this.formData = { region: 'us-east-1', forcePathStyle: false, proxyEnabled: false };
+          this.formData = { region: 'us-east-1', forcePathStyle: false, proxyEnabled: false, isHuaweiOBS: false };
           this.renderForm();
           break;
         case 'edit':
@@ -114,6 +114,7 @@ export class SettingsPanel {
       forcePathStyle: data.forcePathStyle === true || data.forcePathStyle === 'true',
       accessKeyId: data.accessKeyId,
       secretAccessKey: data.secretAccessKey,
+      isHuaweiOBS: data.isHuaweiOBS === true || data.isHuaweiOBS === 'true',
       proxyEnabled: data.proxyEnabled === true || data.proxyEnabled === 'true',
       proxyUrl: data.proxyUrl || undefined,
       proxyUsername: data.proxyUsername || undefined,
@@ -142,6 +143,7 @@ export class SettingsPanel {
       forcePathStyle: data.forcePathStyle === true || data.forcePathStyle === 'true',
       accessKeyId: data.accessKeyId || '',
       secretAccessKey: data.secretAccessKey || '',
+      isHuaweiOBS: data.isHuaweiOBS === true || data.isHuaweiOBS === 'true',
       proxyEnabled: data.proxyEnabled === true || data.proxyEnabled === 'true',
       proxyUrl: data.proxyUrl || undefined,
       proxyUsername: data.proxyUsername || undefined,
@@ -173,11 +175,12 @@ function getListHtml(connections: S3Connection[]): string {
     : connections.map(c => {
         const icon = c.forcePathStyle ? '🔧' : '☁️';
         const proxyTag = c.proxyEnabled && c.proxyUrl ? `<span class="proxy-tag">Proxy</span>` : '';
+        const obsTag = c.isHuaweiOBS ? `<span class="proxy-tag" style="background:#d97706;">OBS</span>` : '';
         return `<div class="conn-row" data-id="${c.id}">
           <div class="conn-info">
             <span class="conn-icon">${icon}</span>
             <div class="conn-details">
-              <div class="conn-name">${escapeHtml(c.name)} ${proxyTag}</div>
+              <div class="conn-name">${escapeHtml(c.name)} ${proxyTag}${obsTag}</div>
               <div class="conn-meta">${escapeHtml(c.endpoint)} / ${escapeHtml(c.bucket)}</div>
             </div>
           </div>
@@ -248,6 +251,7 @@ function getFormHtml(data: Partial<S3Connection>, isEdit: boolean): string {
   const accessKeyId = data.accessKeyId || '';
   const secretAccessKey = data.secretAccessKey || '';
   const proxyEnabled = data.proxyEnabled ?? false;
+  const isHuaweiOBS = data.isHuaweiOBS ?? false;
 
   return `<!DOCTYPE html>
 <html lang="${isZh() ? 'zh-CN' : 'en'}">
@@ -303,6 +307,10 @@ input:focus { outline:none; border-color:var(--vscode-focusBorder); }
   <div class="checkbox-row">
     <input type="checkbox" id="forcePathStyle" ${forcePathStyle ? 'checked' : ''}>
     <label for="forcePathStyle" style="margin:0;font-size:var(--vscode-font-size);cursor:pointer;">${t('prompt_pathStyle')}</label>
+  </div>
+  <div class="checkbox-row">
+    <input type="checkbox" id="isHuaweiOBS" ${isHuaweiOBS ? 'checked' : ''}>
+    <label for="isHuaweiOBS" style="margin:0;font-size:var(--vscode-font-size);cursor:pointer;">${t('prompt_isHuaweiOBS')}</label>
   </div>
   <div class="field-group">
     <label for="accessKeyId">${t('prompt_accessKey')}</label>
@@ -365,6 +373,7 @@ function getFormData() {
     region: document.getElementById('region').value.trim() || 'us-east-1',
     bucket: document.getElementById('bucket').value.trim(),
     forcePathStyle: document.getElementById('forcePathStyle').checked,
+    isHuaweiOBS: document.getElementById('isHuaweiOBS').checked,
     accessKeyId: document.getElementById('accessKeyId').value.trim(),
     secretAccessKey: document.getElementById('secretAccessKey').value.trim(),
     proxyEnabled: enabled,

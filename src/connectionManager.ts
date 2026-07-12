@@ -9,6 +9,7 @@ export interface S3Connection {
   forcePathStyle: boolean;
   accessKeyId: string;
   secretAccessKey: string;
+  isHuaweiOBS?: boolean;
   proxyEnabled?: boolean;
   proxyUrl?: string;
   proxyUsername?: string;
