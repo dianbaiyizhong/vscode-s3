@@ -220,7 +220,7 @@ export async function listObjects(
   let pageCount = 0;
   let isTruncated = false;
 
-  const mk = maxKeys ?? 200;
+  const mk = maxKeys ?? 100;
   const hasMaxPages = maxPages > 0 && !targetKey;
   while (!hasMaxPages || pageCount < maxPages) {
     pageCount++;

@@ -755,7 +755,7 @@ export class FolderBrowserPanel {
 
       const client = createClient(conn);
       const prefix = this.searchPrefix ?? this.prefix;
-      const result = await listObjects(client, conn.bucket, prefix, 1, undefined, this.nextToken, 1000);
+      const result = await listObjects(client, conn.bucket, prefix, 1, undefined, this.nextToken, 100);
       this.items.push(...result.items);
       this.nextToken = result.nextToken;
     } finally {
@@ -792,7 +792,7 @@ export class FolderBrowserPanel {
       let cursor: string | undefined;
       for (let i = 0; i < 50; i++) {
         if (this.items.length > 0) break;
-        const result = await listObjects(client, conn.bucket, this.prefix, 1, undefined, cursor, 1000);
+        const result = await listObjects(client, conn.bucket, this.prefix, 1, undefined, cursor, 100);
         const matched = result.items.filter(i => i.key.replace(/\/$/, '').split('/').pop()?.toLowerCase().includes(lower));
         this.items.push(...matched);
         cursor = result.nextToken;
@@ -1475,10 +1475,12 @@ document.addEventListener('click', e => {
 
 // drag-and-drop
 const overlay = document.getElementById('dragOverlay');
+let dragCounter = 0;
 
 document.addEventListener('dragenter', e => {
   e.preventDefault();
   e.dataTransfer.effectAllowed = 'copy';
+  dragCounter++;
   overlay.classList.add('show');
 }, true);
 
@@ -1489,7 +1491,9 @@ document.addEventListener('dragover', e => {
 
 document.addEventListener('dragleave', e => {
   e.preventDefault();
-  if (e.target === document || e.target === document.body) {
+  dragCounter--;
+  if (dragCounter <= 0) {
+    dragCounter = 0;
     overlay.classList.remove('show');
   }
 }, true);
@@ -1498,16 +1502,12 @@ document.addEventListener('drop', async e => {
   e.preventDefault();
   e.stopPropagation();
   e.dataTransfer.dropEffect = 'copy';
+  dragCounter = 0;
   overlay.classList.remove('show');
   const files = Array.from(e.dataTransfer.files);
   if (files.length === 0) return;
-  const maxSize = 100 * 1024 * 1024;
   const tasks = [];
   for (const file of files) {
-    if (file.size > maxSize) {
-      vscodeApi.postMessage({ type: 'showError', text: l10n.tooLarge.replace('{0}', file.name) });
-      continue;
-    }
     tasks.push(new Promise(resolve => {
       const reader = new FileReader();
       reader.onload = () => {
