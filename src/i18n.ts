@@ -139,7 +139,7 @@ const en: Record<string, string> = {
   msg_verifyWarn: 'Connection test failed: {0}',
   msg_editUpdated: 'Connection updated',
 
-  msg_pathNotFound: 'Path not found in the bucket',
+  msg_pathNotFound: 'Path not found: {0}',
   msg_refreshing: 'Refreshing...',
   msg_fileNotFound: 'File not found: {0}',
   msg_fileNoLongerExists: 'File no longer exists: {0}',
@@ -355,7 +355,7 @@ const zh: Record<string, string> = {
   msg_verifyWarn: '连接测试失败：{0}',
   msg_editUpdated: '连接已更新',
 
-  msg_pathNotFound: '在存储桶中未找到该路径',
+  msg_pathNotFound: '路径不存在：{0}',
   msg_refreshing: '刷新中...',
   msg_fileNotFound: '未找到文件：{0}',
   msg_fileNoLongerExists: '文件不再存在：{0}',

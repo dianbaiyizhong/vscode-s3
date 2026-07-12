@@ -634,20 +634,8 @@ export class FolderBrowserPanel {
       return;
     }
 
-    if (rawPath.endsWith('/')) {
-      this.prefix = rawPath;
-      this.singleFileKey = undefined;
-      this.items = [];
-      this.nextToken = undefined;
-      this.loading = false;
-      this.onNavigate(this.connectionId, rawPath);
-      this.render();
-      await this.loadItems();
-      this.render();
-      return;
-    }
-
     const trimmed = rawPath.replace(/\/$/, '');
+    const isFolderInput = rawPath.endsWith('/');
     const lastSlash = trimmed.lastIndexOf('/');
     const lastSegment = lastSlash === -1 ? trimmed : trimmed.substring(lastSlash + 1);
     const parentPrefix = lastSlash === -1 ? '' : trimmed.substring(0, lastSlash + 1);
@@ -655,21 +643,26 @@ export class FolderBrowserPanel {
     const client = createClient(conn);
     const { HeadObjectCommand, ListObjectsV2Command } = await import('@aws-sdk/client-s3');
 
-    let fileExists = false;
-    try {
-      await client.send(new HeadObjectCommand({ Bucket: conn.bucket, Key: rawPath }));
-      fileExists = true;
-    } catch { /* file doesn't exist */ }
+    const checkFolderExists = async (prefix: string): Promise<boolean> => {
+      try {
+        const resp = await client.send(new ListObjectsV2Command({
+          Bucket: conn.bucket, Prefix: prefix, Delimiter: '/', MaxKeys: 1,
+        }));
+        return (resp.CommonPrefixes && resp.CommonPrefixes.length > 0)
+          || (resp.Contents && resp.Contents.length > 0);
+      } catch { return false; }
+    };
 
-    const folderKey = rawPath.endsWith('/') ? rawPath : rawPath + '/';
-    let folderExists = false;
-    try {
-      const listResp = await client.send(new ListObjectsV2Command({
-        Bucket: conn.bucket, Prefix: folderKey, Delimiter: '/', MaxKeys: 1,
-      }));
-      folderExists = (listResp.CommonPrefixes && listResp.CommonPrefixes.length > 0)
-        || listResp.KeyCount !== undefined && listResp.KeyCount > 0;
-    } catch { /* folder doesn't exist */ }
+    let fileExists = false;
+    if (!isFolderInput) {
+      try {
+        await client.send(new HeadObjectCommand({ Bucket: conn.bucket, Key: rawPath }));
+        fileExists = true;
+      } catch { /* file doesn't exist */ }
+    }
+
+    const folderKey = trimmed + '/';
+    let folderExists = await checkFolderExists(folderKey);
 
     if (fileExists && folderExists) {
       this.singleFileKey = undefined;
@@ -706,16 +699,42 @@ export class FolderBrowserPanel {
       await this.loadItems();
       this.render();
     } else {
-      this.singleFileKey = undefined;
-      this.prefix = parentPrefix;
-      this.items = [];
-      this.nextToken = undefined;
-      this.loading = false;
-      this.onNavigate(this.connectionId, parentPrefix);
-      this.render();
-      await this.loadItems();
-      this.render();
-      vscode.window.showInformationMessage(t('msg_fileNotFound', rawPath));
+      // Walk up to find the nearest existing ancestor
+      let segments = trimmed.split('/').filter(Boolean);
+      let found = false;
+      while (segments.length > 0) {
+        segments.pop();
+        const ancestorPrefix = segments.length > 0 ? segments.join('/') + '/' : '';
+        if (ancestorPrefix === '' || await checkFolderExists(ancestorPrefix)) {
+          this.singleFileKey = undefined;
+          this.prefix = ancestorPrefix;
+          this.items = [];
+          this.nextToken = undefined;
+          this.loading = false;
+          this.onNavigate(this.connectionId, ancestorPrefix);
+          this.render();
+          await this.loadItems();
+          this.render();
+          if (ancestorPrefix) {
+            vscode.window.showWarningMessage(t('msg_pathNotFound', rawPath));
+          }
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        // Navigate to root
+        this.prefix = '';
+        this.singleFileKey = undefined;
+        this.items = [];
+        this.nextToken = undefined;
+        this.loading = false;
+        this.onNavigate(this.connectionId, '');
+        this.render();
+        await this.loadItems();
+        this.render();
+        vscode.window.showWarningMessage(t('msg_pathNotFound', rawPath));
+      }
     }
   }
 
