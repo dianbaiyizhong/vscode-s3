@@ -654,9 +654,10 @@ export class FolderBrowserPanel {
     };
 
     let fileExists = false;
+    let fileHead: any = undefined;
     if (!isFolderInput) {
       try {
-        await client.send(new HeadObjectCommand({ Bucket: conn.bucket, Key: rawPath }));
+        fileHead = await client.send(new HeadObjectCommand({ Bucket: conn.bucket, Key: rawPath }));
         fileExists = true;
       } catch { /* file doesn't exist */ }
     }
@@ -682,7 +683,7 @@ export class FolderBrowserPanel {
     } else if (fileExists) {
       this.singleFileKey = rawPath;
       this.prefix = parentPrefix;
-      this.items = [{ key: rawPath, isFolder: false }];
+      this.items = [{ key: rawPath, isFolder: false, size: fileHead?.ContentLength, lastModified: fileHead?.LastModified }];
       this.nextToken = undefined;
       this.loading = false;
       this.onNavigate(this.connectionId, rawPath);
