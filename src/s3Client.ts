@@ -296,7 +296,7 @@ export async function listObjects(
     items.push({
       key: obj.Key,
       isFolder: false,
-      size: obj.Size,
+      size: Number(obj.Size) || 0,
       lastModified: obj.LastModified,
     });
   }
@@ -583,7 +583,7 @@ export async function getBucketInfo(client: IObjectClient, bucket: string): Prom
     const contents = response.Contents || [];
     totalObjects += contents.length;
     for (const obj of contents) {
-      totalSize += obj.Size || 0;
+      totalSize += Number(obj.Size) || 0;
     }
     if (!response.IsTruncated) break;
     cursor = contents[contents.length - 1]?.Key;
@@ -606,7 +606,7 @@ export async function getFolderInfo(client: IObjectClient, bucket: string, prefi
     const contents = response.Contents || [];
     totalObjects += contents.length;
     for (const obj of contents) {
-      totalSize += obj.Size || 0;
+      totalSize += Number(obj.Size) || 0;
     }
     if (!response.IsTruncated) break;
     cursor = contents[contents.length - 1]?.Key;
