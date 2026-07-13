@@ -52,7 +52,7 @@ class ObsClientWrapper implements IObjectClient {
       const data = result.InterfaceResult || result;
       return {
         ...data,
-        IsTruncated: !!data.IsTruncated,
+        IsTruncated: data.IsTruncated === true || data.IsTruncated === 'true',
         NextContinuationToken: data.NextMarker,
         CommonPrefixes: data.CommonPrefixes || [],
         Contents: data.Contents || [],
@@ -65,7 +65,7 @@ class ObsClientWrapper implements IObjectClient {
       const data = result.InterfaceResult || result;
       return {
         ...data,
-        IsTruncated: !!data.IsTruncated,
+        IsTruncated: data.IsTruncated === true || data.IsTruncated === 'true',
         CommonPrefixes: data.CommonPrefixes || [],
         Contents: data.Contents || [],
       };
