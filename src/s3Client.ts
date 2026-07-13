@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as stream from 'stream';
 import {
   S3Client,
   HeadBucketCommand,
@@ -93,7 +94,11 @@ class ObsClientWrapper implements IObjectClient {
       return result.InterfaceResult || result;
     }
     if (name.includes('PutObject')) {
-      const result = await this.client.putObject(input);
+      const body = input.Body;
+      const result = await this.client.putObject({
+        ...input,
+        Body: body && Buffer.isBuffer(body) ? stream.Readable.from(body) : body,
+      });
       const common = result.CommonMsg || {};
       if (common.Status >= 300) this.throwError(common);
       return result.InterfaceResult || result;

@@ -304,7 +304,7 @@ export class FolderBrowserPanel {
           const items: { label: string; value: string }[] = [
             { label: t('msg_infoKey'), value: item.key },
             { label: t('msg_infoType'), value: item.isFolder ? t('msg_infoFolder') : t('msg_infoFile') },
-            { label: t('msg_infoSize'), value: item.size != null ? formatSize(item.size) : '-' },
+            { label: t('msg_infoSize'), value: item.size != null ? `${formatSize(item.size)} (${item.size.toLocaleString()} B)` : '-' },
             { label: t('msg_infoLastModified'), value: item.lastModified ? new Date(item.lastModified).toISOString() : '-' },
           ];
           try {
