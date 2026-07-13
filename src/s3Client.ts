@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'path';
 import * as stream from 'stream';
 import {
   S3Client,
@@ -346,7 +347,58 @@ export async function downloadFile(
     chunks.push(chunk);
   }
   const buffer = Buffer.concat(chunks);
+  await fs.promises.mkdir(path.dirname(destinationPath), { recursive: true });
   await fs.promises.writeFile(destinationPath, buffer);
+}
+
+export async function downloadFolder(
+  client: IObjectClient,
+  bucket: string,
+  prefix: string,
+  destinationDir: string,
+  onProgress?: (current: number, total: number, key: string) => void
+): Promise<{ success: number; fail: number }> {
+  const files: string[] = [];
+  let cursor: string | undefined;
+  for (let i = 0; i < 200; i++) {
+    const response = await client.send(new ListObjectsV2Command({
+      Bucket: bucket,
+      Prefix: prefix,
+      MaxKeys: 1000,
+      ...(cursor ? { StartAfter: cursor } : {}),
+    }));
+    const contents = response.Contents || [];
+    for (const obj of contents) {
+      if (obj.Key && !obj.Key.endsWith('/')) {
+        files.push(obj.Key);
+      }
+    }
+    if (!response.IsTruncated) break;
+    cursor = contents[contents.length - 1]?.Key;
+    if (!cursor) break;
+  }
+
+  let success = 0;
+  let fail = 0;
+  for (let i = 0; i < files.length; i++) {
+    const key = files[i];
+    const relativePath = key.startsWith(prefix) ? key.slice(prefix.length) : key;
+    const destPath = path.join(destinationDir, relativePath);
+    try {
+      const body = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+      const chunks: Uint8Array[] = [];
+      for await (const chunk of (body.Body || new Uint8Array()) as any) {
+        chunks.push(chunk);
+      }
+      await fs.promises.mkdir(path.dirname(destPath), { recursive: true });
+      await fs.promises.writeFile(destPath, Buffer.concat(chunks));
+      success++;
+    } catch {
+      fail++;
+    }
+    onProgress?.(i + 1, files.length, key);
+  }
+  return { success, fail };
 }
 
 export async function deleteObject(

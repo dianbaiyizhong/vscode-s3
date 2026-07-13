@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { createClient, listObjects, uploadFile, downloadFile, deleteObject, deleteFolder, renameObject, renameFolder, createFolder, S3ObjectInfo } from './s3Client';
+import { createClient, listObjects, uploadFile, downloadFile, downloadFolder, deleteObject, deleteFolder, renameObject, renameFolder, createFolder, S3ObjectInfo } from './s3Client';
 import { ConnectionManager } from './connectionManager';
 import { JumpRecord } from './jumpHistory';
 import { t } from './i18n';
@@ -364,15 +364,37 @@ export class FolderBrowserPanel {
           const conn = this.connectionManager.getConnection(this.connectionId);
           if (!conn) return;
           const item = message.item as S3ObjectInfo;
-          if (item.isFolder) return;
-          const defaultUri = vscode.Uri.file(item.key.split('/').pop() || item.key);
-          const uri = await vscode.window.showSaveDialog({ defaultUri });
-          if (!uri) return;
           const client = createClient(conn);
-          await vscode.window.withProgress(
-            { location: vscode.ProgressLocation.Notification, title: t('msg_downloading', item.key) },
-            () => downloadFile(client, conn.bucket, item.key, uri.fsPath)
-          );
+          if (item.isFolder) {
+            const uri = await vscode.window.showOpenDialog({
+              canSelectFolders: true,
+              canSelectMany: false,
+              title: t('msg_downloadFolderTitle', item.key),
+            });
+            if (!uri || uri.length === 0) return;
+            const destDir = path.join(uri[0].fsPath, item.key.replace(/\/$/, '').split('/').pop() || 'folder');
+            await vscode.window.withProgress(
+              { location: vscode.ProgressLocation.Notification, title: t('msg_downloadingFolder', item.key) },
+              async (progress) => {
+                const result = await downloadFolder(client, conn.bucket, item.key, destDir, (current, total) => {
+                  progress.report({ message: `${current}/${total}` });
+                });
+                if (result.fail > 0 && result.success > 0) {
+                  vscode.window.showWarningMessage(t('msg_downloadedWarn', result.success, result.fail));
+                } else if (result.success > 0) {
+                  vscode.window.showInformationMessage(t('msg_downloadedFolder', result.success, destDir));
+                }
+              }
+            );
+          } else {
+            const defaultUri = vscode.Uri.file(item.key.split('/').pop() || item.key);
+            const uri = await vscode.window.showSaveDialog({ defaultUri });
+            if (!uri) return;
+            await vscode.window.withProgress(
+              { location: vscode.ProgressLocation.Notification, title: t('msg_downloading', item.key) },
+              () => downloadFile(client, conn.bucket, item.key, uri.fsPath)
+            );
+          }
           break;
         }
         case 'refresh':
@@ -450,23 +472,55 @@ export class FolderBrowserPanel {
         case 'upload': {
           const conn = this.connectionManager.getConnection(this.connectionId);
           if (!conn) return;
-          const uris = await vscode.window.showOpenDialog({
-            canSelectMany: true,
-            title: t('msg_uploadTitle', this.prefix || '/'),
-          });
+          const mode = await vscode.window.showQuickPick(
+            [
+              { label: t('wv_uploadFiles'), description: '' },
+              { label: t('wv_uploadFolder'), description: '' },
+            ],
+            { placeHolder: t('msg_uploadTitle', this.prefix || '/') }
+          );
+          if (!mode) return;
+          let uris: vscode.Uri[] | undefined;
+          if (mode.label === t('wv_uploadFolder')) {
+            uris = await vscode.window.showOpenDialog({
+              canSelectFolders: true,
+              canSelectMany: false,
+              title: t('msg_uploadFolderTitle', this.prefix || '/'),
+            });
+          } else {
+            uris = await vscode.window.showOpenDialog({
+              canSelectMany: true,
+              title: t('msg_uploadTitle', this.prefix || '/'),
+            });
+          }
           if (!uris || uris.length === 0) return;
           const client = createClient(conn);
           let successCount = 0;
           let failCount = 0;
+          const allFiles: { localPath: string; remoteKey: string }[] = [];
+          for (const uri of uris) {
+            const stat = fs.statSync(uri.fsPath);
+            if (stat.isDirectory()) {
+              const baseName = path.basename(uri.fsPath);
+              const files = walkDir(uri.fsPath);
+              for (const f of files) {
+                const relative = path.relative(uri.fsPath, f);
+                allFiles.push({ localPath: f, remoteKey: this.prefix + baseName + '/' + relative.replace(/\\/g, '/') });
+              }
+            } else {
+              const fileName = path.basename(uri.fsPath);
+              allFiles.push({ localPath: uri.fsPath, remoteKey: this.prefix + fileName });
+            }
+          }
           await vscode.window.withProgress(
-            { location: vscode.ProgressLocation.Window, title: t('msg_uploading', uris.length) },
+            { location: vscode.ProgressLocation.Window, title: t('msg_uploading', allFiles.length) },
             async (progress) => {
-              for (let i = 0; i < uris.length; i++) {
-                const fileName = path.basename(uris[i].fsPath);
-                const key = this.prefix + fileName;
-                progress.report({ message: `${i + 1}/${uris.length} ${fileName}`, increment: Math.round(100 / uris.length) });
+              for (let i = 0; i < allFiles.length; i++) {
+                const { localPath, remoteKey } = allFiles[i];
+                const fileName = path.basename(localPath);
+                progress.report({ message: `${i + 1}/${allFiles.length} ${fileName}`, increment: Math.round(100 / allFiles.length) });
                 try {
-                  await uploadFile(client, conn.bucket, key, uris[i].fsPath);
+                  await uploadFile(client, conn.bucket, remoteKey, localPath);
                   successCount++;
                 } catch (err: any) {
                   failCount++;
@@ -894,6 +948,20 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function walkDir(dir: string): string[] {
+  const result: string[] = [];
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      result.push(...walkDir(fullPath));
+    } else {
+      result.push(fullPath);
+    }
+  }
+  return result;
+}
+
 function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loading: boolean, refreshing: boolean = false, searchPattern?: string, historyRecords?: JumpRecord[], connectionId?: string, folderSvg?: string, fileSvg?: string, extIcons?: Record<string, string>, actionIcons?: Record<string, string>, backIcon?: string, searchMode?: string): string {
   const headerRow = `<div class="list-header">
     <span></span>
@@ -927,6 +995,7 @@ function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loadin
       <span class="item-date"></span>
       <span class="item-actions">
         <span class="action" data-action="info" title="${t('wv_info')}">${iconInfo}</span>
+        <span class="action" data-action="download" title="${t('wv_download')}">${iconDownload}</span>
         <span class="action" data-action="rename" title="${t('wv_rename')}">${iconRename}</span>
         <span class="action" data-action="delete" title="${t('wv_delete')}">${iconDelete}</span>
         <span class="action" data-action="copyPath" title="${t('wv_copyPath')}">${iconCopy}</span>
@@ -1486,6 +1555,7 @@ document.addEventListener('contextmenu', e => {
   };
   const ai = actionIcons2 || {};
   addItem(ai['info'] || '&#x2139;', l10n.info, 'info');
+  addItem(ai['download'] || '&#x2B07;', l10n.download, 'download');
   addItem(ai['rename'] || '&#x270F;', l10n.rename, 'rename');
   if (isFile) addItem(ai['download'] || '&#x2B07;', l10n.download, 'download');
   addItem(ai['delete'] || '&#x1F5D1;', l10n.delete, 'delete');
