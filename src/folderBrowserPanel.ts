@@ -313,7 +313,7 @@ export class FolderBrowserPanel {
             { label: t('msg_infoKey'), value: item.key },
             { label: t('msg_infoType'), value: item.isFolder ? t('msg_infoFolder') : t('msg_infoFile') },
             { label: t('msg_infoSize'), value: item.size != null ? `${formatSize(item.size)} (${item.size.toLocaleString()} B)` : '-' },
-            { label: t('msg_infoLastModified'), value: item.lastModified ? new Date(item.lastModified).toISOString() : '-' },
+            { label: t('msg_infoLastModified'), value: item.lastModified ? formatDate(new Date(item.lastModified)) : '-' },
           ];
           if (item.isFolder) {
             try {
@@ -886,7 +886,8 @@ function formatSize(bytes?: number): string {
 
 function formatDate(date?: Date): string {
   if (!date) return '';
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 function escapeHtml(text: string): string {
