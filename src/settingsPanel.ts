@@ -6,14 +6,17 @@ import { t, isZh } from './i18n';
 export class SettingsPanel {
   public static currentPanel: SettingsPanel | undefined;
 
-  public static createOrShow(connectionManager: ConnectionManager): void {
+  public static createOrShow(connectionManager: ConnectionManager, connectionId?: string): void {
     const column = vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.One;
     if (SettingsPanel.currentPanel) {
       SettingsPanel.currentPanel.panel.reveal(column);
       SettingsPanel.currentPanel.update(connectionManager);
+      if (connectionId) {
+        SettingsPanel.currentPanel.editConnection(connectionId);
+      }
       return;
     }
-    SettingsPanel.currentPanel = new SettingsPanel(column, connectionManager);
+    SettingsPanel.currentPanel = new SettingsPanel(column, connectionManager, connectionId);
   }
 
   private panel: vscode.WebviewPanel;
@@ -21,7 +24,7 @@ export class SettingsPanel {
   private editingId: string | undefined;
   private formData: Partial<S3Connection> = {};
 
-  private constructor(column: vscode.ViewColumn, connectionManager: ConnectionManager) {
+  private constructor(column: vscode.ViewColumn, connectionManager: ConnectionManager, connectionId?: string) {
     this.connectionManager = connectionManager;
 
     this.panel = vscode.window.createWebviewPanel(
@@ -32,7 +35,11 @@ export class SettingsPanel {
     );
     this.panel.iconPath = new vscode.ThemeIcon('gear');
 
-    this.render();
+    if (connectionId) {
+      this.editConnection(connectionId);
+    } else {
+      this.render();
+    }
 
     this.panel.onDidDispose(() => {
       SettingsPanel.currentPanel = undefined;
@@ -49,12 +56,7 @@ export class SettingsPanel {
           this.renderForm();
           break;
         case 'edit':
-          this.editingId = message.connectionId;
-          const conn = this.connectionManager.getConnection(message.connectionId);
-          if (conn) {
-            this.formData = { ...conn };
-            this.renderForm();
-          }
+          this.editConnection(message.connectionId);
           break;
         case 'delete':
           const id = message.connectionId as string;
@@ -97,6 +99,15 @@ export class SettingsPanel {
 
   private renderForm(): void {
     this.panel.webview.html = getFormHtml(this.formData, !!this.editingId);
+  }
+
+  private editConnection(connectionId: string): void {
+    this.editingId = connectionId;
+    const conn = this.connectionManager.getConnection(connectionId);
+    if (conn) {
+      this.formData = { ...conn };
+      this.renderForm();
+    }
   }
 
   private async handleSave(data: any): Promise<void> {

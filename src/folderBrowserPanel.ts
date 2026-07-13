@@ -295,6 +295,13 @@ export class FolderBrowserPanel {
           vscode.window.setStatusBarMessage(`$(link) ${t('msg_copiedPath', item.key)}`, 3000);
           break;
         }
+        case 'copyFileName': {
+          const item = message.item as S3ObjectInfo;
+          const fileName = item.key.split('/').pop() || item.key;
+          vscode.env.clipboard.writeText(fileName);
+          vscode.window.setStatusBarMessage(`$(link) ${t('msg_copiedFileName', fileName)}`, 3000);
+          break;
+        }
         case 'info': {
           const conn = this.connectionManager.getConnection(this.connectionId);
           if (!conn) return;
@@ -891,6 +898,7 @@ function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loadin
   const iconRename = (actionIcons && actionIcons['rename']) || '&#x270F;';
   const iconDelete = (actionIcons && actionIcons['delete']) || '&#x1F5D1;';
   const iconCopy = (actionIcons && actionIcons['copypath']) || '&#x1F4CB;';
+  const iconCopyName = (actionIcons && actionIcons['copyfilename']) || '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="1" width="9" height="11" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="4" y="7" width="5" height="1.5" rx="0.75" fill="currentColor"/><rect x="4" y="4.5" width="3.5" height="1.5" rx="0.75" fill="currentColor"/></svg>';
   const iconDownload = (actionIcons && actionIcons['download']) || '&#x2B07;';
   const folderIconSvg = folderSvg || '&#x1F4C1;';
   const fileIconSvg = fileSvg || '&#x1F4C4;';
@@ -908,6 +916,7 @@ function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loadin
         <span class="action" data-action="rename" title="${t('wv_rename')}">${iconRename}</span>
         <span class="action" data-action="delete" title="${t('wv_delete')}">${iconDelete}</span>
         <span class="action" data-action="copyPath" title="${t('wv_copyPath')}">${iconCopy}</span>
+        <span class="action" data-action="copyFileName" title="${t('wv_copyFileName')}">${iconCopyName}</span>
       </span>
     </div>`;
   }).join('');
@@ -929,6 +938,7 @@ function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loadin
         <span class="action" data-action="download" title="${t('wv_download')}">${iconDownload}</span>
         <span class="action" data-action="delete" title="${t('wv_delete')}">${iconDelete}</span>
         <span class="action" data-action="copyPath" title="${t('wv_copyPath')}">${iconCopy}</span>
+        <span class="action" data-action="copyFileName" title="${t('wv_copyFileName')}">${iconCopyName}</span>
       </span>
     </div>`;
   }).join('');
@@ -1327,6 +1337,7 @@ const vscodeApi = acquireVsCodeApi();
     download: t('wv_download'),
     delete: t('wv_delete'),
     copyPath: t('wv_copyPath'),
+    copyFileName: t('wv_copyFileName'),
     info: t('wv_info'),
     tooLarge: t('msg_tooLarge'),
     newFolder: t('cmd_newFolder'),
@@ -1465,6 +1476,7 @@ document.addEventListener('contextmenu', e => {
   if (isFile) addItem(ai['download'] || '&#x2B07;', l10n.download, 'download');
   addItem(ai['delete'] || '&#x1F5D1;', l10n.delete, 'delete');
   addItem(ai['copypath'] || '&#x1F4CB;', l10n.copyPath, 'copyPath');
+  addItem(ai['copyfilename'] || '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="1" width="9" height="11" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="4" y="7" width="5" height="1.5" rx="0.75" fill="currentColor"/><rect x="4" y="4.5" width="3.5" height="1.5" rx="0.75" fill="currentColor"/></svg>', l10n.copyFileName, 'copyFileName');
   ctxMenu.style.left = e.clientX + 'px';
   ctxMenu.style.top = e.clientY + 'px';
   ctxMenu.classList.add('show');

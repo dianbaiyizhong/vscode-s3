@@ -30,7 +30,7 @@ export function registerCommands(
       treeProvider.refresh(item)
     ),
     vscode.commands.registerCommand('s3.editConnection', (item: S3TreeItem) =>
-      SettingsPanel.createOrShow(connectionManager)
+      SettingsPanel.createOrShow(connectionManager, item?.connectionId)
     ),
     vscode.commands.registerCommand('s3.deleteConnection', (item: S3TreeItem) =>
       deleteConnection(connectionManager, treeProvider, item)

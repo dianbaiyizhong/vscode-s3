@@ -147,6 +147,7 @@ const en: Record<string, string> = {
   msg_uploadTitle: 'Upload to {0}',
   msg_downloadTitle: 'Downloading {0}',
   msg_copiedPath: 'Copied: {0}',
+  msg_copiedFileName: 'Copied: {0}',
   msg_uploadWarn: 'Uploaded {0} file(s), {1} failed',
   msg_bucketInfoFailed: 'Failed to get bucket info: {0}',
   msg_unknownError: 'Unknown error',
@@ -205,6 +206,7 @@ const en: Record<string, string> = {
   wv_download: 'Download',
   wv_delete: 'Delete',
   wv_copyPath: 'Copy Path',
+  wv_copyFileName: 'Copy File Name',
   wv_info: 'Info',
   wv_pathInputTitle: 'Enter path and press Enter to navigate',
 
@@ -363,6 +365,7 @@ const zh: Record<string, string> = {
   msg_uploadTitle: '上传到 {0}',
   msg_downloadTitle: '正在下载 {0}',
   msg_copiedPath: '已复制：{0}',
+  msg_copiedFileName: '已复制：{0}',
   msg_uploadWarn: '已上传 {0} 个文件，{1} 个失败',
   msg_bucketInfoFailed: '获取存储桶信息失败：{0}',
   msg_unknownError: '未知错误',
@@ -420,6 +423,7 @@ const zh: Record<string, string> = {
   wv_download: '下载',
   wv_delete: '删除',
   wv_copyPath: '复制路径',
+  wv_copyFileName: '复制文件名',
   wv_info: '详情',
   wv_pathInputTitle: '输入路径后按回车跳转',
 
