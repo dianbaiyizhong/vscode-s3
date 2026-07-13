@@ -592,6 +592,29 @@ export async function getBucketInfo(client: IObjectClient, bucket: string): Prom
   return { totalObjects, totalSize };
 }
 
+export async function getFolderInfo(client: IObjectClient, bucket: string, prefix: string): Promise<{ totalObjects: number; totalSize: number }> {
+  let totalObjects = 0;
+  let totalSize = 0;
+  let cursor: string | undefined;
+  for (let i = 0; i < 200; i++) {
+    const response = await client.send(new ListObjectsV2Command({
+      Bucket: bucket,
+      Prefix: prefix,
+      MaxKeys: 1000,
+      ...(cursor ? { StartAfter: cursor } : {}),
+    }));
+    const contents = response.Contents || [];
+    totalObjects += contents.length;
+    for (const obj of contents) {
+      totalSize += obj.Size || 0;
+    }
+    if (!response.IsTruncated) break;
+    cursor = contents[contents.length - 1]?.Key;
+    if (!cursor) break;
+  }
+  return { totalObjects, totalSize };
+}
+
 export async function testConnection(
   client: IObjectClient,
   bucket: string

@@ -308,12 +308,25 @@ export class FolderBrowserPanel {
           const item = message.item as S3ObjectInfo;
           const client = createClient(conn);
           const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+          const { getFolderInfo } = await import('./s3Client');
           const items: { label: string; value: string }[] = [
             { label: t('msg_infoKey'), value: item.key },
             { label: t('msg_infoType'), value: item.isFolder ? t('msg_infoFolder') : t('msg_infoFile') },
             { label: t('msg_infoSize'), value: item.size != null ? `${formatSize(item.size)} (${item.size.toLocaleString()} B)` : '-' },
             { label: t('msg_infoLastModified'), value: item.lastModified ? new Date(item.lastModified).toISOString() : '-' },
           ];
+          if (item.isFolder) {
+            try {
+              const info = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: t('msg_gatheringFolderInfo') },
+                () => getFolderInfo(client, conn.bucket, item.key)
+              );
+              items.push(
+                { label: t('msg_infoTotalObjects'), value: info.totalObjects >= 200000 ? '200000+' : String(info.totalObjects) },
+                { label: t('msg_infoTotalSize'), value: formatSize(info.totalSize) },
+              );
+            } catch {}
+          }
           try {
             const head = await client.send(new HeadObjectCommand({ Bucket: conn.bucket, Key: item.key }));
             if (head.ETag) items.push({ label: t('msg_infoETag'), value: head.ETag.replace(/"/g, '') });
