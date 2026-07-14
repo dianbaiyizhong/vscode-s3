@@ -18,6 +18,7 @@ import {
 import { S3Connection } from './connectionManager';
 import { HttpProxyAgent } from 'http-proxy-agent';
 import { HttpsProxyAgent } from 'https-proxy-agent';
+import { Upload } from '@aws-sdk/lib-storage';
 
 export interface IObjectClient {
   send(command: any): Promise<any>;
@@ -314,16 +315,35 @@ export async function uploadFile(
   client: IObjectClient,
   bucket: string,
   key: string,
-  localFilePath: string
+  localFilePath: string,
+  contentLength?: number
 ): Promise<void> {
-  const fileBuffer = await fs.promises.readFile(localFilePath);
-  await client.send(
-    new PutObjectCommand({
-      Bucket: bucket,
-      Key: key,
-      Body: fileBuffer,
-    })
-  );
+  const createReadStream = () => fs.createReadStream(localFilePath, { highWaterMark: 1024 * 1024 * 16 });
+
+  if (client instanceof ObsClientWrapper) {
+    const stat = contentLength ?? (await fs.promises.stat(localFilePath)).size;
+    await client.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: createReadStream(),
+        ContentLength: stat,
+      })
+    );
+  } else {
+    const upload = new Upload({
+      client: client as any,
+      params: {
+        Bucket: bucket,
+        Key: key,
+        Body: createReadStream(),
+      },
+      queueSize: 4,
+      partSize: 1024 * 1024 * 16,
+      leavePartsOnError: false,
+    });
+    await upload.done();
+  }
 }
 
 export async function downloadFile(
