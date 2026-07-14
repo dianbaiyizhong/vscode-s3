@@ -2,7 +2,9 @@ import * as vscode from 'vscode';
 import * as os from "os";
 import * as path from 'path';
 import * as fs from 'fs';
-import { createClient, listObjects, uploadFile, downloadFile, downloadFolder, deleteObject, deleteFolder, renameObject, renameFolder, createFolder, S3ObjectInfo } from './s3Client';
+import { createClient, listObjects, uploadFile, downloadFile, downloadFolder, deleteObject, deleteFolder, renameObject, renameFolder, createFolder, S3ObjectInfo, ProgressFn } from './s3Client';
+import { taskManager } from './taskManager';
+import { TaskViewPanel } from './taskViewPanel';
 import { ConnectionManager } from './connectionManager';
 import { JumpRecord } from './jumpHistory';
 import { t } from './i18n';
@@ -13,6 +15,7 @@ export class FolderBrowserPanel {
     tempFile: string;
     totalChunks: number;
     receivedChunks: number;
+    taskId: string;
     progress?: { report: (v: { message?: string; increment?: number }) => void };
     progressResolve?: () => void;
   }> | undefined;
@@ -283,7 +286,20 @@ export class FolderBrowserPanel {
                 progress.report({ message: `${i + 1}/${files.length} ${fileName}` });
                 try {
                   const destPath = path.join(destDir, fileName);
-                  await downloadFile(client, conn.bucket, files[i].key, destPath);
+                  const fileName3 = files[i].key.split('/').pop() || files[i].key;
+                  const taskId = taskManager.add({
+                    type: 'download',
+                    fileName: fileName3,
+                    size: files[i].size || 0,
+                    source: `${conn.bucket}/${files[i].key}`,
+                    destination: destPath,
+                    connectionName: conn.name,
+                    bucket: conn.bucket,
+                  });
+                  await downloadFile(client, conn.bucket, files[i].key, destPath, (pct) => {
+                    taskManager.updateProgress(taskId, pct);
+                  });
+                  taskManager.complete(taskId);
                   successCount++;
                 } catch (err: any) {
                   failCount++;
@@ -383,27 +399,12 @@ export class FolderBrowserPanel {
             });
             if (!uri || uri.length === 0) return;
             const destDir = path.join(uri[0].fsPath, item.key.replace(/\/$/, '').split('/').pop() || 'folder');
-            await vscode.window.withProgress(
-              { location: vscode.ProgressLocation.Notification, title: t('msg_downloadingFolder', item.key) },
-              async (progress) => {
-                const result = await downloadFolder(client, conn.bucket, item.key, destDir, (current, total) => {
-                  progress.report({ message: `${current}/${total}` });
-                });
-                if (result.fail > 0 && result.success > 0) {
-                  vscode.window.showWarningMessage(t('msg_downloadedWarn', result.success, result.fail));
-                } else if (result.success > 0) {
-                  vscode.window.showInformationMessage(t('msg_downloadedFolder', result.success, destDir));
-                }
-              }
-            );
+            this._downloadItem(item, client, conn, destDir);
           } else {
             const defaultUri = vscode.Uri.file(item.key.split('/').pop() || item.key);
             const uri = await vscode.window.showSaveDialog({ defaultUri });
             if (!uri) return;
-            await vscode.window.withProgress(
-              { location: vscode.ProgressLocation.Notification, title: t('msg_downloading', item.key) },
-              () => downloadFile(client, conn.bucket, item.key, uri.fsPath)
-            );
+            this._downloadItem(item, client, conn, uri.fsPath);
           }
           break;
         }
@@ -505,63 +506,9 @@ export class FolderBrowserPanel {
           }
           if (!uris || uris.length === 0) return;
           const client = createClient(conn);
-          let successCount = 0;
-          let failCount = 0;
-          const allFiles: { localPath: string; remoteKey: string }[] = [];
-          for (const uri of uris) {
-            const stat = fs.statSync(uri.fsPath);
-            if (stat.isDirectory()) {
-              const baseName = path.basename(uri.fsPath);
-              const files = walkDir(uri.fsPath);
-              for (const f of files) {
-                const relative = path.relative(uri.fsPath, f);
-                allFiles.push({ localPath: f, remoteKey: this.prefix + baseName + '/' + relative.replace(/\\/g, '/') });
-              }
-            } else {
-              const fileName = path.basename(uri.fsPath);
-              allFiles.push({ localPath: uri.fsPath, remoteKey: this.prefix + fileName });
-            }
-          }
-          await vscode.window.withProgress(
-            { location: vscode.ProgressLocation.Window, title: t('msg_uploading', allFiles.length) },
-            async (progress) => {
-              for (let i = 0; i < allFiles.length; i++) {
-                const { localPath, remoteKey } = allFiles[i];
-                const fileName = path.basename(localPath);
-                progress.report({ message: `${i + 1}/${allFiles.length} ${fileName}`, increment: Math.round(100 / allFiles.length) });
-                try {
-                  await uploadFile(client, conn.bucket, remoteKey, localPath);
-                  successCount++;
-                } catch (err: any) {
-                  failCount++;
-                  vscode.window.showErrorMessage(t('msg_uploadFailed', fileName, err.message));
-                }
-              }
-            }
-          );
-          if (successCount > 0) {
-            this.items = [];
-            this.nextToken = undefined;
-            this.loading = false;
-            if (this.singleFileKey) {
-              const client = createClient(conn);
-              const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
-              try {
-                const head = await client.send(new HeadObjectCommand({ Bucket: conn.bucket, Key: this.singleFileKey }));
-                this.items = [{ key: this.singleFileKey, isFolder: false, size: head.ContentLength, lastModified: head.LastModified }];
-              } catch {
-                this.singleFileKey = undefined;
-              }
-            } else {
-              await this.loadItems();
-            }
-            this.render();
-          }
-          if (failCount > 0 && successCount > 0) {
-            vscode.window.showWarningMessage(t('msg_uploadWarn', successCount, failCount));
-          } else if (successCount > 0 && failCount === 0) {
-            vscode.window.showInformationMessage(t('msg_uploaded', successCount));
-          }
+          
+          // Start upload in background so the panel stays responsive
+          this._uploadFiles(conn, client, uris);
           break;
         }
         case 'searchFiles': {
@@ -659,12 +606,22 @@ export class FolderBrowserPanel {
                 const { fileName, content } = files[i];
                 const key = this.prefix + fileName;
                 progress.report({ message: `${i + 1}/${files.length} ${fileName}`, increment: Math.round(100 / files.length) });
+                const taskId = taskManager.add({
+                  type: 'upload',
+                  fileName,
+                  source: key,
+                  destination: `${conn.bucket}/${key}`,
+                  connectionName: conn.name,
+                  bucket: conn.bucket,
+                });
                 try {
                   const buffer = Buffer.from(content, 'base64');
                   const { PutObjectCommand } = await import('@aws-sdk/client-s3');
                   await client.send(new PutObjectCommand({ Bucket: conn.bucket, Key: key, Body: buffer }));
+                  taskManager.complete(taskId);
                   successCount++;
                 } catch (err: any) {
+                  taskManager.fail(taskId, err.message);
                   failCount++;
                   vscode.window.showErrorMessage(t('msg_uploadFailed', fileName, err.message));
                 }
@@ -714,8 +671,18 @@ export class FolderBrowserPanel {
             const tempFile = path.join(tempDir, transferId);
             transfer = { fileName, tempFile, totalChunks, receivedChunks: 0 };
             transfers.set(transferId, transfer);
-            // Truncate or create the temp file
             fs.writeFileSync(tempFile, Buffer.alloc(0));
+            
+            // Register task in task manager
+            transfer.taskId = taskManager.add({
+              type: 'upload',
+              fileName,
+              size: fileSize,
+              source: fileName,
+              destination: `${conn2.bucket}/${this.prefix}${fileName}`,
+              connectionName: conn2.name,
+              bucket: conn2.bucket,
+            });
             
             // Start progress bar
             vscode.window.withProgress(
@@ -728,22 +695,27 @@ export class FolderBrowserPanel {
           }
           
           const chunkBuf = Buffer.from(chunk);
-          // Write chunk at the correct position (handle out-of-order delivery)
           const fd = fs.openSync(transfer.tempFile, 'r+');
           fs.writeSync(fd, chunkBuf, 0, chunkBuf.length, chunkIndex * FolderBrowserPanel.CHUNK_SIZE);
           fs.closeSync(fd);
           transfer.receivedChunks++;
           
-          // Report progress
+          // Update progress in both task manager and progress bar
           const pct = Math.round(transfer.receivedChunks / totalChunks * 100);
+          taskManager.updateProgress(transfer.taskId, pct);
           transfer.progress?.report({ increment: 100 / totalChunks, message: `${pct}% (${transfer.receivedChunks}/${totalChunks})` });
           
           if (transfer.receivedChunks >= totalChunks) {
             // All chunks received — upload via streaming API
-            transfer.progress?.report({ message: `${fileName} - ${t('msg_uploading', 1)}` });
+            transfer.progress?.report({ message: fileName + ' - ' + t('msg_uploading', 1) });
             const client = createClient(conn2);
             try {
-              await uploadFile(client, conn2.bucket, this.prefix + fileName, transfer.tempFile);
+              await uploadFile(client, conn2.bucket, this.prefix + fileName, transfer.tempFile, undefined, (pct) => {
+                taskManager.updateProgress(transfer.taskId, pct);
+              });
+              taskManager.complete(transfer.taskId);
+            } catch (err: any) {
+              taskManager.fail(transfer.taskId, err.message);
             } finally {
               transfer.progressResolve?.();
               transfers.delete(transferId);
@@ -770,11 +742,133 @@ export class FolderBrowserPanel {
           }
           break;
         }
+        case 'openTaskView': {
+          TaskViewPanel.createOrShow();
+          break;
+        }
       }
     });
   }
 
-  public async goToPath(rawPath: string): Promise<void> {
+  
+  private async _downloadItem(item: any, client: any, conn: any, destPath: string): Promise<void> {
+    const fileName = item.key.split('/').pop() || item.key;
+    const taskId = taskManager.add({
+      type: 'download',
+      fileName,
+      size: item.size || 0,
+      source: `${conn.bucket}/${item.key}`,
+      destination: destPath,
+      connectionName: conn.name,
+      bucket: conn.bucket,
+    });
+    try {
+      if (item.isFolder) {
+        await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: t('msg_downloadingFolder', item.key) },
+          async (progress) => {
+            const result = await downloadFolder(client, conn.bucket, item.key, destPath, (current, total) => {
+              const pct = total > 0 ? Math.round(current / total * 100) : 0;
+              taskManager.updateProgress(taskId, pct);
+              progress.report({ message: `${current}/${total}` });
+            });
+            if (result.fail > 0 && result.success > 0) {
+              vscode.window.showWarningMessage(t('msg_downloadedWarn', result.success, result.fail));
+            } else if (result.success > 0) {
+              vscode.window.showInformationMessage(t('msg_downloadedFolder', result.success, destPath));
+            }
+            if (result.fail > 0) {
+              taskManager.fail(taskId, t('msg_downloadedWarn', result.success, result.fail));
+            } else {
+              taskManager.complete(taskId);
+            }
+          }
+        );
+      } else {
+        await downloadFile(client, conn.bucket, item.key, destPath, (pct) => {
+          taskManager.updateProgress(taskId, pct);
+        });
+        taskManager.complete(taskId);
+      }
+    } catch (err: any) {
+      taskManager.fail(taskId, err.message);
+    }
+  }
+
+  private async _uploadFiles(conn: any, client: any, uris: vscode.Uri[]): Promise<void> {
+    let successCount = 0;
+    let failCount = 0;
+    const allFiles: { localPath: string; remoteKey: string }[] = [];
+    for (const uri of uris) {
+      const stat = fs.statSync(uri.fsPath);
+      if (stat.isDirectory()) {
+        const baseName = path.basename(uri.fsPath);
+        const files = walkDir(uri.fsPath);
+        for (const f of files) {
+          const relative = path.relative(uri.fsPath, f);
+          allFiles.push({ localPath: f, remoteKey: this.prefix + baseName + '/' + relative.replace(/\\/g, '/') });
+        }
+      } else {
+        const fileName = path.basename(uri.fsPath);
+        allFiles.push({ localPath: uri.fsPath, remoteKey: this.prefix + fileName });
+      }
+    }
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Window, title: t('msg_uploading', allFiles.length) },
+      async (progress) => {
+        for (let i = 0; i < allFiles.length; i++) {
+          const { localPath, remoteKey } = allFiles[i];
+          const fileName = path.basename(localPath);
+          progress.report({ message: `${i + 1}/${allFiles.length} ${fileName}`, increment: Math.round(100 / allFiles.length) });
+          const taskId = taskManager.add({
+            type: 'upload',
+            fileName,
+            size: fs.statSync(localPath).size,
+            source: localPath,
+            destination: `${conn.bucket}/${remoteKey}`,
+            connectionName: conn.name,
+            bucket: conn.bucket,
+          });
+          try {
+            await uploadFile(client, conn.bucket, remoteKey, localPath, undefined, (pct) => {
+              taskManager.updateProgress(taskId, pct);
+            });
+            taskManager.complete(taskId);
+            successCount++;
+          } catch (err: any) {
+            taskManager.fail(taskId, err.message);
+            failCount++;
+            vscode.window.showErrorMessage(t('msg_uploadFailed', fileName, err.message));
+          }
+        }
+      }
+    );
+    if (successCount > 0) {
+      this.items = [];
+      this.nextToken = undefined;
+      this.loading = false;
+      if (this.singleFileKey) {
+        const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+        const cl = createClient(conn);
+        try {
+          const head = await cl.send(new HeadObjectCommand({ Bucket: conn.bucket, Key: this.singleFileKey }));
+          this.items = [{ key: this.singleFileKey, isFolder: false, size: head.ContentLength, lastModified: head.LastModified }];
+        } catch {
+          this.singleFileKey = undefined;
+        }
+      } else {
+        await this.loadItems();
+      }
+      this.render();
+    }
+    if (failCount > 0 && successCount > 0) {
+      vscode.window.showWarningMessage(t('msg_uploadWarn', successCount, failCount));
+    } else if (successCount > 0 && failCount === 0) {
+      vscode.window.showInformationMessage(t('msg_uploaded', successCount));
+    }
+  }
+
+public async goToPath(rawPath: string): Promise<void> {
     this.searchPattern = undefined;
     const conn = this.connectionManager.getConnection(this.connectionId);
     if (!conn) return;
@@ -1467,6 +1561,7 @@ body {
   <button class="icon-btn" id="refreshBtn" title="${t('wv_refresh')}" ${refreshing ? 'disabled' : ''}>${refreshSvg}</button>
   <button class="icon-btn" id="newFolderBtn" title="${t('cmd_newFolder')}">${newFolderSvg}</button>
   <button class="icon-btn" id="uploadBtn" title="${t('wv_upload')}">${uploadSvg}</button>
+  <button class="icon-btn" id="taskViewBtn" title="${t('cmd_openTaskView')}">&#x2630;</button>
   <span class="header-sep"></span>
   <button class="icon-btn" id="dlBatchBtn" title="${t('wv_downloadSelected')}" disabled>${iconDownload}</button>
   <button class="icon-btn" id="delBatchBtn" title="${t('wv_deleteSelected')}" disabled>${iconDelete}</button>
@@ -1764,6 +1859,9 @@ document.getElementById('newFolderBtn')?.addEventListener('click', () => {
 });
 document.getElementById('uploadBtn')?.addEventListener('click', () => {
   vscodeApi.postMessage({ type: 'upload' });
+});
+document.getElementById('taskViewBtn')?.addEventListener('click', () => {
+  vscodeApi.postMessage({ type: 'openTaskView' });
 });
 const filterInput = document.getElementById('filterInput');
 const searchModeSelect = document.getElementById('searchModeSelect');

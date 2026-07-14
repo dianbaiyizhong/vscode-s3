@@ -233,6 +233,18 @@ const en: Record<string, string> = {
   wv_settings_back: 'Back',
   val_required: 'Name, Endpoint, Bucket, Access Key ID, and Secret Access Key are required',
   val_endpointBucketRequired: 'Endpoint and Bucket are required to test',
+  // task view
+  tv_title: 'Task View',
+  tv_progress: 'Progress',
+  tv_status: 'Status',
+  tv_time: 'Time',
+  tv_inProgress: 'In Progress',
+  tv_completed: 'Completed',
+  tv_failed: 'Failed',
+  tv_clearCompleted: 'Clear Completed',
+  tv_empty: 'No tasks',
+  tv_placeholder: 'Select a task to view details',
+  cmd_openTaskView: 'Open Task View',
 };
 
 const zh: Record<string, string> = {
@@ -459,6 +471,18 @@ const zh: Record<string, string> = {
   wv_settings_back: '返回',
   val_required: '名称、服务地址、存储桶、Access Key ID 和 Secret Access Key 为必填项',
   val_endpointBucketRequired: '需要服务地址和存储桶才能测试',
+  // task view
+  tv_title: '任务列表',
+  tv_progress: '进度',
+  tv_status: '状态',
+  tv_time: '时间',
+  tv_inProgress: '进行中',
+  tv_completed: '已完成',
+  tv_failed: '失败',
+  tv_clearCompleted: '清除已完成',
+  tv_empty: '暂无任务',
+  tv_placeholder: '选择一个任务查看详情',
+  cmd_openTaskView: '打开任务列表',
 };
 
 type Dict = Record<string, string>;

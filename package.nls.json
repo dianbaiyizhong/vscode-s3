@@ -19,5 +19,6 @@
   "cmd.goToPath": "Go to Path...",
   "cmd.getInfo": "Get Info",
   "cmd.openConnection": "Open Connection",
-  "cmd.bucketInfo": "Bucket Info..."
+  "cmd.bucketInfo": "Bucket Info...",
+  "cmd.openTaskView": "Open Task View"
 }

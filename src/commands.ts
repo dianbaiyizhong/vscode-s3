@@ -4,6 +4,7 @@ import { S3ExplorerProvider, S3TreeItem } from './treeView';
 import { t } from './i18n';
 import { JumpHistory } from './jumpHistory';
 import { FolderBrowserPanel } from './folderBrowserPanel';
+import { TaskViewPanel } from './taskViewPanel';
 import { SettingsPanel } from './settingsPanel';
 import { createClient, getBucketInfo } from './s3Client';
 
@@ -43,6 +44,9 @@ export function registerCommands(
     ),
     vscode.commands.registerCommand('s3.bucketInfo', (item: S3TreeItem) =>
       handleBucketInfo(item)
+    ),
+    vscode.commands.registerCommand('s3.openTaskView', () =>
+      TaskViewPanel.createOrShow()
     )
   );
 }

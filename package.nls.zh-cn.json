@@ -19,5 +19,6 @@
   "cmd.goToPath": "跳转到路径...",
   "cmd.getInfo": "详细信息",
   "cmd.openConnection": "打开连接",
-  "cmd.bucketInfo": "存储桶信息..."
+  "cmd.bucketInfo": "存储桶信息...",
+  "cmd.openTaskView": "打开任务列表"
 }

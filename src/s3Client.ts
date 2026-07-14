@@ -192,6 +192,8 @@ export function createClient(connection: S3Connection): IObjectClient {
   return new S3Client(config);
 }
 
+export type ProgressFn = (pct: number, loaded: number, total: number) => void;
+
 export interface S3ObjectInfo {
   key: string;
   isFolder: boolean;
@@ -316,18 +318,27 @@ export async function uploadFile(
   bucket: string,
   key: string,
   localFilePath: string,
-  contentLength?: number
+  contentLength?: number,
+  onProgress?: ProgressFn
 ): Promise<void> {
-  const createReadStream = () => fs.createReadStream(localFilePath, { highWaterMark: 1024 * 1024 * 16 });
+  const totalSize = contentLength ?? (await fs.promises.stat(localFilePath)).size;
+  const createStream = () => fs.createReadStream(localFilePath, { highWaterMark: 1024 * 1024 * 16 });
 
   if (client instanceof ObsClientWrapper) {
-    const stat = contentLength ?? (await fs.promises.stat(localFilePath)).size;
+    let loaded = 0;
+    const rs = createStream();
+    if (onProgress) {
+      rs.on('data', (chunk: Buffer) => {
+        loaded += chunk.length;
+        onProgress(Math.round(loaded / totalSize * 100), loaded, totalSize);
+      });
+    }
     await client.send(
       new PutObjectCommand({
         Bucket: bucket,
         Key: key,
-        Body: createReadStream(),
-        ContentLength: stat,
+        Body: rs,
+        ContentLength: totalSize,
       })
     );
   } else {
@@ -336,12 +347,19 @@ export async function uploadFile(
       params: {
         Bucket: bucket,
         Key: key,
-        Body: createReadStream(),
+        Body: createStream(),
       },
       queueSize: 4,
       partSize: 1024 * 1024 * 16,
       leavePartsOnError: false,
     });
+    if (onProgress) {
+      upload.on('httpUploadProgress', (p: { loaded?: number; total?: number }) => {
+        const loaded = p.loaded ?? 0;
+        const total = p.total ?? totalSize;
+        onProgress(Math.round(loaded / total * 100), loaded, total);
+      });
+    }
     await upload.done();
   }
 }
@@ -350,7 +368,8 @@ export async function downloadFile(
   client: IObjectClient,
   bucket: string,
   key: string,
-  destinationPath: string
+  destinationPath: string,
+  onProgress?: ProgressFn
 ): Promise<void> {
   const response = await client.send(
     new GetObjectCommand({
@@ -362,13 +381,29 @@ export async function downloadFile(
   const body = response.Body;
   if (!body) throw new Error('Empty response body');
 
-  const chunks: Uint8Array[] = [];
-  for await (const chunk of body as any) {
-    chunks.push(chunk);
-  }
-  const buffer = Buffer.concat(chunks);
+  const contentLength = response.ContentLength as number | undefined;
   await fs.promises.mkdir(path.dirname(destinationPath), { recursive: true });
-  await fs.promises.writeFile(destinationPath, buffer);
+
+  if (onProgress && contentLength && contentLength > 0) {
+    const writeStream = fs.createWriteStream(destinationPath);
+    let loaded = 0;
+    for await (const chunk of body as any) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      writeStream.write(buf);
+      loaded += buf.length;
+      onProgress(Math.round(loaded / contentLength * 100), loaded, contentLength);
+    }
+    await new Promise<void>((resolve, reject) => {
+      writeStream.end(err => err ? reject(err) : resolve());
+    });
+  } else {
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of body as any) {
+      chunks.push(chunk);
+    }
+    const buffer = Buffer.concat(chunks);
+    await fs.promises.writeFile(destinationPath, buffer);
+  }
 }
 
 export async function downloadFolder(

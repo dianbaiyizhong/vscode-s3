@@ -80,6 +80,11 @@
         "command": "s3.bucketInfo",
         "title": "%cmd.bucketInfo%",
         "icon": "$(info)"
+      },
+      {
+        "command": "s3.openTaskView",
+        "title": "%cmd.openTaskView%",
+        "icon": "$(list-tree)"
       }
     ],
     "menus": {
@@ -96,6 +101,11 @@
         },
         {
           "command": "s3.refresh",
+          "when": "view == s3Explorer",
+          "group": "navigation"
+        },
+        {
+          "command": "s3.openTaskView",
           "when": "view == s3Explorer",
           "group": "navigation"
         }
