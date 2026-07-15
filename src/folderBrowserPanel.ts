@@ -695,9 +695,9 @@ export class FolderBrowserPanel {
           }
           
           const chunkBuf = Buffer.from(chunk);
-          const fd = fs.openSync(transfer.tempFile, 'r+');
-          fs.writeSync(fd, chunkBuf, 0, chunkBuf.length, chunkIndex * FolderBrowserPanel.CHUNK_SIZE);
-          fs.closeSync(fd);
+          const writeFd = await fs.promises.open(transfer.tempFile, 'r+');
+          await writeFd.write(chunkBuf, 0, chunkBuf.length, chunkIndex * FolderBrowserPanel.CHUNK_SIZE);
+          await writeFd.close();
           transfer.receivedChunks++;
           
           // Update progress in both task manager and progress bar
@@ -1804,7 +1804,7 @@ document.addEventListener('drop', async e => {
         const end = Math.min(start + CHUNK_SIZE, file.size);
         const blob = file.slice(start, end);
         const arrayBuf = await blob.arrayBuffer();
-        const chunk = Array.from(new Uint8Array(arrayBuf));
+        const chunk = new Uint8Array(arrayBuf);
         vscodeApi.postMessage({
           type: 'uploadDropChunk',
           transferId,
