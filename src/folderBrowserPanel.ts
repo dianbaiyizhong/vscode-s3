@@ -702,9 +702,8 @@ export class FolderBrowserPanel {
           await writeFd.close();
           transfer.receivedChunks++;
           
-          // Update progress in both task manager and progress bar
+          // Update progress in progress bar only (task progress is tracked by uploadFile)
           const pct = Math.round(transfer.receivedChunks / totalChunks * 100);
-          taskManager.updateProgress(transfer.taskId, pct);
           transfer.progress?.report({ increment: 100 / totalChunks, message: `${pct}% (${transfer.receivedChunks}/${totalChunks})` });
           
           if (transfer.receivedChunks >= totalChunks) {
@@ -1116,7 +1115,9 @@ function formatSize(bytes?: number): string {
   if (bytes == null) return '';
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes < 1024 * 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  return `${(bytes / (1024 * 1024 * 1024 * 1024)).toFixed(1)} TB`;
 }
 
 function formatDate(date?: Date): string {

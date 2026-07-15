@@ -345,9 +345,9 @@ export async function uploadFile(
           Key: key,
           UploadFile: localFilePath,
           PartSize: 5 * 1024 * 1024,
-          ProgressCallback: onProgress ? (p: any) => {
-            const transferred = p.transferredBytes || 0;
-            const total = p.totalBytes || totalSize;
+          ProgressCallback: onProgress ? (transferredBytes: number, totalBytes: number) => {
+            const transferred = transferredBytes || 0;
+            const total = totalBytes || totalSize;
             onProgress(Math.round(transferred / total * 100), transferred, total);
           } : undefined,
         }, (err: any, result: any) => {
