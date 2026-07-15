@@ -35,6 +35,7 @@ class ObsClientWrapper implements IObjectClient {
       server: connection.endpoint,
       ...(connection.region ? { region: connection.region } : {}),
       ...(connection.forcePathStyle ? { path_style: true } : {}),
+      socketTimeout: 3600000,
     });
   }
 
@@ -106,12 +107,22 @@ class ObsClientWrapper implements IObjectClient {
       return result.InterfaceResult || result;
     }
     if (name.includes('GetObject')) {
-      const result = await this.client.getObject(input);
+      const result = await this.client.getObject(Object.assign({}, input, { SaveAsStream: true }));
       const common = result.CommonMsg || {};
       if (common.Status >= 300) this.throwError(common);
       const data = result.InterfaceResult || result;
-      if (data.Body && typeof data.Body.pipe !== 'function' && typeof data.Body[Symbol.asyncIterator] !== 'function') {
-        data.Body = (async function* () { yield data.Body; })();
+      // OBS SDK stores the body under 'Content' (model param name), not 'Body' — remap
+      if (!data.Body && data.Content) {
+        data.Body = data.Content;
+      }
+      if (data.Body) {
+        if (typeof data.Body.pipe === 'function') {
+          // Already a stream from OBS SDK (SaveAsStream:true) — pass through
+        } else if (typeof data.Body[Symbol.asyncIterator] !== 'function') {
+          data.Body = (async function* () { yield data.Body; })();
+        }
+      } else {
+        throw new Error('Empty response body');
       }
       return data;
     }
@@ -325,22 +336,47 @@ export async function uploadFile(
   const createStream = () => fs.createReadStream(localFilePath, { highWaterMark: 1024 * 1024 * 16 });
 
   if (client instanceof ObsClientWrapper) {
-    let loaded = 0;
-    const rs = createStream();
-    if (onProgress) {
-      rs.on('data', (chunk: Buffer) => {
-        loaded += chunk.length;
-        onProgress(Math.round(loaded / totalSize * 100), loaded, totalSize);
+    const obsClient = (client as any).client;
+    // Use OBS SDK uploadFile (multipart) for reliable large-file uploads
+    if (typeof obsClient?.uploadFile === 'function' && totalSize > 10 * 1024 * 1024) {
+      await new Promise<void>((resolve, reject) => {
+        obsClient.uploadFile({
+          Bucket: bucket,
+          Key: key,
+          UploadFile: localFilePath,
+          PartSize: 5 * 1024 * 1024,
+          ProgressCallback: onProgress ? (p: any) => {
+            const transferred = p.transferredBytes || 0;
+            const total = p.totalBytes || totalSize;
+            onProgress(Math.round(transferred / total * 100), transferred, total);
+          } : undefined,
+        }, (err: any, result: any) => {
+          if (err) {
+            const msg = err.Message || err.message || String(err);
+            reject(new Error(msg));
+          } else {
+            resolve();
+          }
+        });
       });
+    } else {
+      let loaded = 0;
+      const rs = createStream();
+      if (onProgress) {
+        rs.on('data', (chunk: Buffer) => {
+          loaded += chunk.length;
+          onProgress(Math.round(loaded / totalSize * 100), loaded, totalSize);
+        });
+      }
+      await client.send(
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: key,
+          Body: rs,
+          ContentLength: totalSize,
+        })
+      );
     }
-    await client.send(
-      new PutObjectCommand({
-        Bucket: bucket,
-        Key: key,
-        Body: rs,
-        ContentLength: totalSize,
-      })
-    );
   } else {
     const upload = new Upload({
       client: client as any,
@@ -384,26 +420,34 @@ export async function downloadFile(
   const contentLength = response.ContentLength as number | undefined;
   await fs.promises.mkdir(path.dirname(destinationPath), { recursive: true });
 
-  if (onProgress && contentLength && contentLength > 0) {
-    const writeStream = fs.createWriteStream(destinationPath);
-    let loaded = 0;
-    for await (const chunk of body as any) {
-      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      writeStream.write(buf);
-      loaded += buf.length;
-      onProgress(Math.round(loaded / contentLength * 100), loaded, contentLength);
-    }
-    await new Promise<void>((resolve, reject) => {
-      writeStream.end(err => err ? reject(err) : resolve());
-    });
+  // Normalise any body type into a Readable stream
+  let readable: stream.Readable;
+  if (typeof body[Symbol.asyncIterator] === 'function') {
+    readable = stream.Readable.from(body);
+  } else if (typeof (body as any).pipe === 'function') {
+    readable = body as stream.Readable;
+  } else if (Buffer.isBuffer(body)) {
+    readable = stream.Readable.from([body]);
   } else {
-    const chunks: Uint8Array[] = [];
-    for await (const chunk of body as any) {
-      chunks.push(chunk);
-    }
-    const buffer = Buffer.concat(chunks);
-    await fs.promises.writeFile(destinationPath, buffer);
+    readable = stream.Readable.from([Buffer.from(String(body))]);
   }
+
+  const writeStream = fs.createWriteStream(destinationPath);
+  let loaded = 0;
+
+  if (onProgress && contentLength && contentLength > 0) {
+    readable.on('data', (chunk: Buffer) => {
+      loaded += chunk.length;
+      onProgress(Math.round(loaded / contentLength * 100), loaded, contentLength);
+    });
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    readable.on('error', reject);
+    writeStream.on('error', reject);
+    writeStream.on('finish', resolve);
+    readable.pipe(writeStream);
+  });
 }
 
 export async function downloadFolder(

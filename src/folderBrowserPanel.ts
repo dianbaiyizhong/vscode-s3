@@ -401,7 +401,7 @@ export class FolderBrowserPanel {
             const destDir = path.join(uri[0].fsPath, item.key.replace(/\/$/, '').split('/').pop() || 'folder');
             this._downloadItem(item, client, conn, destDir);
           } else {
-            const defaultUri = vscode.Uri.file(item.key.split('/').pop() || item.key);
+            const defaultUri = vscode.Uri.file(path.join(os.homedir(), item.key.split('/').pop() || item.key));
             const uri = await vscode.window.showSaveDialog({ defaultUri });
             if (!uri) return;
             this._downloadItem(item, client, conn, uri.fsPath);
