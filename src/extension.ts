@@ -6,6 +6,7 @@ import { S3ExplorerProvider } from './treeView';
 import { registerCommands } from './commands';
 import { PreviewManager } from './previewManager';
 import { JumpHistory } from './jumpHistory';
+import { taskManager } from './taskManager';
 import { initI18n, t } from './i18n';
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -15,12 +16,27 @@ export function activate(context: vscode.ExtensionContext): void {
   const treeProvider = new S3ExplorerProvider(connectionManager);
   const previewManager = new PreviewManager();
   const jumpHistory = new JumpHistory(context.globalState);
+  taskManager.init(context.globalState);
 
   vscode.window.createTreeView('s3Explorer', {
     treeDataProvider: treeProvider,
   });
 
   registerCommands(context, connectionManager, treeProvider, jumpHistory);
+
+  // Auto-close webview panels that VS Code tries to restore on restart
+  context.subscriptions.push(
+    vscode.window.registerWebviewPanelSerializer('s3TaskView', {
+      async deserializeWebviewPanel(panel: vscode.WebviewPanel) {
+        try { panel.dispose(); } catch { /* already disposed */ }
+      }
+    }),
+    vscode.window.registerWebviewPanelSerializer('folderBrowser', {
+      async deserializeWebviewPanel(panel: vscode.WebviewPanel) {
+        try { panel.dispose(); } catch { /* already disposed */ }
+      }
+    })
+  );
 
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument(async (doc) => {

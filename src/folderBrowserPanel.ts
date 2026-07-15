@@ -30,6 +30,8 @@ export class FolderBrowserPanel {
     getHistoryRecords?: () => JumpRecord[],
     skipInitialLoad = false
   ): FolderBrowserPanel {
+    // Close task view when opening a connection
+    TaskViewPanel.currentPanel?.dispose();
     const column = vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.One;
     return new FolderBrowserPanel(column, connectionManager, connectionId, prefix, label, onNavigate, getHistoryRecords, skipInitialLoad);
   }

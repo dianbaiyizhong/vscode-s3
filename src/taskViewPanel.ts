@@ -9,9 +9,8 @@ export class TaskViewPanel {
 
   static createOrShow(): void {
     if (TaskViewPanel.currentPanel) {
-      TaskViewPanel.currentPanel._panel.reveal();
-      TaskViewPanel.currentPanel._refreshNow();
-      return;
+      // Always recreate — fresh panel guarantees content renders
+      TaskViewPanel.currentPanel.dispose();
     }
     const panel = vscode.window.createWebviewPanel(
       's3TaskView',
@@ -177,6 +176,7 @@ document.getElementById('clearBtn').addEventListener('click', () => {
       case 'in_progress': return _t('tv_inProgress');
       case 'completed': return _t('tv_completed');
       case 'failed': return _t('tv_failed');
+      case 'interrupted': return _t('tv_interrupted');
       default: return task.status;
     }
   }

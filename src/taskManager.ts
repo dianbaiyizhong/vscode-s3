@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
 export type TaskType = 'upload' | 'download';
-export type TaskStatus = 'queued' | 'in_progress' | 'completed' | 'failed';
+export type TaskStatus = 'queued' | 'in_progress' | 'completed' | 'failed' | 'interrupted';
 
 export interface Task {
   id: string;
@@ -20,11 +20,26 @@ export interface Task {
 }
 
 type TaskListener = (tasks: readonly Task[]) => void;
+const STORAGE_KEY = 'taskManagerTasks';
+const MAX_TASKS = 100;
 
 class TaskManager {
   private _tasks: Task[] = [];
   private _listeners = new Set<TaskListener>();
   private _idCounter = 0;
+  private _storage: vscode.Memento | undefined;
+
+  init(storage: vscode.Memento): void {
+    this._storage = storage;
+    const saved = storage.get<Task[]>(STORAGE_KEY, []);
+    for (const t of saved) {
+      if (t.status === 'in_progress' || t.status === 'queued') {
+        t.status = 'interrupted';
+      }
+    }
+    this._tasks = saved;
+    this._idCounter = saved.length;
+  }
 
   get tasks(): readonly Task[] {
     return this._tasks;
@@ -40,6 +55,7 @@ class TaskManager {
       createdAt: Date.now(),
     });
     this._notify();
+    this._save();
     return id;
   }
 
@@ -56,6 +72,7 @@ class TaskManager {
     if (t) {
       t.progress = Math.min(100, Math.max(0, progress));
       this._notify();
+      this._save();
     }
   }
 
@@ -66,6 +83,7 @@ class TaskManager {
       t.progress = 100;
       t.completedAt = Date.now();
       this._notify();
+      this._save();
     }
   }
 
@@ -76,6 +94,7 @@ class TaskManager {
       t.error = error;
       t.completedAt = Date.now();
       this._notify();
+      this._save();
     }
   }
 
@@ -87,11 +106,18 @@ class TaskManager {
   clearCompleted(): void {
     this._tasks = this._tasks.filter(x => x.status === 'in_progress' || x.status === 'queued');
     this._notify();
+    this._save();
   }
 
   onDidChange(listener: TaskListener): vscode.Disposable {
     this._listeners.add(listener);
     return { dispose: () => this._listeners.delete(listener) };
+  }
+
+  private _save(): void {
+    if (!this._storage) return;
+    const toSave = this._tasks.slice(0, MAX_TASKS);
+    this._storage.update(STORAGE_KEY, toSave).catch(() => {});
   }
 
   private _notify(): void {
