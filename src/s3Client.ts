@@ -337,8 +337,8 @@ export async function uploadFile(
 
   if (client instanceof ObsClientWrapper) {
     const obsClient = (client as any).client;
-    // Use OBS SDK uploadFile (multipart) for reliable large-file uploads
-    if (typeof obsClient?.uploadFile === 'function' && totalSize > 10 * 1024 * 1024) {
+    // Use OBS SDK uploadFile (multipart) for reliable uploads with timeout resilience
+    if (typeof obsClient?.uploadFile === 'function') {
       await new Promise<void>((resolve, reject) => {
         obsClient.uploadFile({
           Bucket: bucket,

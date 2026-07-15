@@ -80,7 +80,7 @@ body {
 }
 .btn:disabled { opacity:0.4; cursor:default; }
 .btn:hover:not(:disabled) { background:var(--vscode-button-hoverBackground); }
-table { width:100%; border-collapse:collapse; }
+table { width:100%; table-layout:fixed; border-collapse:collapse; }
 th {
   text-align:left; padding:6px 8px; font-weight:600; font-size:11px;
   text-transform:uppercase; color:var(--vscode-descriptionForeground);
@@ -91,7 +91,7 @@ td { padding:8px 6px; border-bottom:1px solid var(--vscode-panel-border); vertic
 .type-icon { width:16px; height:16px; display:inline-block; text-align:center; font-size:14px; }
 .type-icon.up { color:var(--vscode-charts-blue); }
 .type-icon.down { color:var(--vscode-charts-green); }
-.file-name { font-weight:500; word-break:break-all; }
+.file-name { font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .file-size { font-size:11px; color:var(--vscode-descriptionForeground); }
 .progress-wrap { width:120px; }
 progress {
@@ -108,8 +108,11 @@ progress::-webkit-progress-value { background:var(--vscode-progressBar-backgroun
 .status-badge.failed { background:var(--vscode-testing-iconFailed); color:#fff; }
 .error-msg { font-size:11px; color:var(--vscode-errorForeground); margin-top:2px; word-break:break-all; }
 .time { font-size:11px; color:var(--vscode-descriptionForeground); white-space:nowrap; }
+th:nth-child(1), td:nth-child(1) { width:32px; text-align:center; }
+td:nth-child(2) { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+th:nth-child(3), td:nth-child(3) { width:120px; }
 th:nth-child(4), td:nth-child(4) { width:90px; text-align:center; }
-td:nth-child(2) { white-space:nowrap; }
+th:nth-child(5), td:nth-child(5) { width:90px; }
 </style>
 </head>
 <body>

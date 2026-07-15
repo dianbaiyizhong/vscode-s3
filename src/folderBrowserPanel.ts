@@ -696,7 +696,7 @@ export class FolderBrowserPanel {
             );
           }
           
-          const chunkBuf = Buffer.from(chunk);
+          const chunkBuf = Buffer.from(chunk, 'base64');
           const writeFd = await fs.promises.open(transfer.tempFile, 'r+');
           await writeFd.write(chunkBuf, 0, chunkBuf.length, chunkIndex * FolderBrowserPanel.CHUNK_SIZE);
           await writeFd.close();
@@ -740,6 +740,31 @@ export class FolderBrowserPanel {
             }
             this.render();
             vscode.window.showInformationMessage(t('msg_uploaded', 1));
+          }
+          break;
+        }
+        case 'uploadDropPath': {
+          const conn4 = this.connectionManager.getConnection(this.connectionId);
+          if (!conn4) break;
+          const { fileName: pathFileName, filePath, fileSize: pathFileSize } = message as any;
+          if (!pathFileName || !filePath) break;
+          const pathTaskId = taskManager.add({
+            type: 'upload',
+            fileName: pathFileName,
+            size: pathFileSize,
+            source: filePath,
+            destination: `${conn4.bucket}/${this.prefix}${pathFileName}`,
+            connectionName: conn4.name,
+            bucket: conn4.bucket,
+          });
+          try {
+            const pathClient = createClient(conn4);
+            await uploadFile(pathClient, conn4.bucket, this.prefix + pathFileName, filePath, undefined, (pct) => {
+              taskManager.updateProgress(pathTaskId, pct);
+            });
+            taskManager.complete(pathTaskId);
+          } catch (err: any) {
+            taskManager.fail(pathTaskId, err.message);
           }
           break;
         }
@@ -1134,6 +1159,7 @@ function walkDir(dir: string): string[] {
   const result: string[] = [];
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
+    if (entry.name.startsWith('.')) continue;
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       result.push(...walkDir(fullPath));
@@ -1784,11 +1810,12 @@ document.addEventListener('drop', async e => {
   e.dataTransfer.dropEffect = 'copy';
   dragCounter = 0;
   overlay.classList.remove('show');
-  const files = Array.from(e.dataTransfer.files);
+  const files = await getFilesFromDrop(e.dataTransfer);
   if (files.length === 0) return;
 
-  const MAX_BASE64_SIZE = 1024 * 1024; // 1MB — keep base64 within postMessage limits
-  const CHUNK_SIZE = 1024 * 1024;      // 1MB chunks for large-file transfer
+  // Files <= 5MB use base64 (single message, no IPC fragmentation issues)
+  const MAX_BASE64_SIZE = 5 * 1024 * 1024;
+  const CHUNK_SIZE = 1024 * 1024;
 
   const smallFiles = [];
   for (const file of files) {
@@ -1800,23 +1827,33 @@ document.addEventListener('drop', async e => {
       });
       smallFiles.push({ fileName: file.name, content: dataUrl.split(',')[1] });
     } else {
+      // Files > 5MB use chunk upload with throttled sends
       const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
       const transferId = file.name + '-' + file.size + '-' + Date.now();
-      for (let i = 0; i < totalChunks; i++) {
-        const start = i * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, file.size);
-        const blob = file.slice(start, end);
-        const arrayBuf = await blob.arrayBuffer();
-        const chunk = new Uint8Array(arrayBuf);
-        vscodeApi.postMessage({
-          type: 'uploadDropChunk',
-          transferId,
-          fileName: file.name,
-          chunk,
-          chunkIndex: i,
-          totalChunks,
-        });
-      }
+      try {
+        for (let i = 0; i < totalChunks; i++) {
+          const start = i * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, file.size);
+          const blob = file.slice(start, end);
+          const dataUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          vscodeApi.postMessage({
+            type: 'uploadDropChunk',
+            transferId,
+            fileName: file.name,
+            chunk: dataUrl.split(',')[1],
+            chunkIndex: i,
+            totalChunks,
+            fileSize: file.size,
+          });
+          // Throttle to prevent IPC queue overflow
+          await new Promise(r => setTimeout(r, 30));
+        }
+      } catch (e) { console.error('chunk upload error', e); }
     }
   }
 
@@ -1824,6 +1861,62 @@ document.addEventListener('drop', async e => {
     vscodeApi.postMessage({ type: 'uploadDrop', files: smallFiles });
   }
 }, true);
+
+async function getFilesFromDrop(dt) {
+  // Use DataTransferItem API (supports folders) when available
+  if (dt.items && dt.items.length > 0) {
+    const items = Array.from(dt.items);
+    const files = [];
+    for (const item of items) {
+      const getEntry = item.webkitGetAsEntry || item.getAsEntry;
+      if (getEntry) {
+        const entry = getEntry.call(item);
+        if (!entry) continue;
+        if (entry.isDirectory) {
+          await readDir(entry, entry.name + '/', files);
+        } else if (entry.isFile) {
+          await readFileEntry(entry, '', files);
+        }
+      } else {
+        const f = item.getAsFile ? item.getAsFile() : null;
+        if (f && !f.name.startsWith('.')) files.push(f);
+      }
+    }
+    return files;
+  }
+  // Fallback to FileList API (no folder support)
+  return Array.from(dt.files).filter(f => !f.name.startsWith('.'));
+}
+
+async function readFileEntry(entry, path, files) {
+  try {
+    const file = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('timeout')), 8000);
+      entry.file(f => { clearTimeout(timer); resolve(f); });
+    });
+    if (!file || file.name.startsWith('.')) return;
+    Object.defineProperty(file, 'name', { value: path + file.name });
+    if (file.size > 0) files.push(file);
+  } catch {}
+}
+
+async function readDir(dirEntry, path, files) {
+  const reader = dirEntry.createReader();
+  const allEntries = [];
+  while (true) {
+    const entries = await new Promise(resolve => reader.readEntries(resolve));
+    if (entries.length === 0) break;
+    allEntries.push(...entries);
+  }
+  for (const entry of allEntries) {
+    if (entry.name.startsWith('.')) continue;
+    if (entry.isDirectory) {
+      await readDir(entry, path + entry.name + '/', files);
+    } else if (entry.isFile) {
+      await readFileEntry(entry, path, files);
+    }
+  }
+}
 
 // actions
 document.addEventListener('click', e => {
