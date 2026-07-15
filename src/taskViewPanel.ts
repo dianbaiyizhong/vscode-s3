@@ -18,6 +18,7 @@ export class TaskViewPanel {
       { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
       { enableScripts: true, retainContextWhenHidden: true }
     );
+    panel.iconPath = new vscode.ThemeIcon('checklist');
     TaskViewPanel.currentPanel = new TaskViewPanel(panel);
   }
 
@@ -107,6 +108,8 @@ progress::-webkit-progress-value { background:var(--vscode-progressBar-backgroun
 .status-badge.failed { background:var(--vscode-testing-iconFailed); color:#fff; }
 .error-msg { font-size:11px; color:var(--vscode-errorForeground); margin-top:2px; word-break:break-all; }
 .time { font-size:11px; color:var(--vscode-descriptionForeground); white-space:nowrap; }
+th:nth-child(4), td:nth-child(4) { width:90px; text-align:center; }
+td:nth-child(2) { white-space:nowrap; }
 </style>
 </head>
 <body>
