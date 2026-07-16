@@ -3,7 +3,7 @@
   "displayName": "%displayName%",
   "description": "%description%",
   "icon": "logo.png",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "publisher": "nntk",
   "engines": {
     "vscode": "^1.89.0"

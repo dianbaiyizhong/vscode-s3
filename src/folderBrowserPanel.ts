@@ -1297,6 +1297,8 @@ body {
 .content-section {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
   padding: 0 16px 12px 16px;
 }
 .header {
