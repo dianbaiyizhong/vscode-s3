@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as os from "os";
 import * as path from 'path';
 import * as fs from 'fs';
+import * as stream from 'stream';
 import { createClient, listObjects, uploadFile, downloadFile, downloadFolder, deleteObject, deleteFolder, renameObject, renameFolder, createFolder, S3ObjectInfo, ProgressFn } from './s3Client';
 import { taskManager } from './taskManager';
 import { TaskViewPanel } from './taskViewPanel';
@@ -12,14 +13,16 @@ import { t } from './i18n';
 export class FolderBrowserPanel {
   static pendingChunkTransfers: Map<string, {
     fileName: string;
-    tempFile: string;
     totalChunks: number;
     receivedChunks: number;
     taskId: string;
     progress?: { report: (v: { message?: string; increment?: number }) => void };
     progressResolve?: () => void;
+    passThrough?: stream.PassThrough;
+    uploadDone?: Promise<void>;
+    tempFile?: string;
   }> | undefined;
-  private static readonly CHUNK_SIZE = 1024 * 1024;
+  private static readonly CHUNK_SIZE = 5 * 1024 * 1024;
 
   public static create(
     connectionManager: ConnectionManager,
@@ -659,24 +662,15 @@ export class FolderBrowserPanel {
           if (!conn2) break;
           const { transferId, fileName, chunk, chunkIndex, totalChunks, fileSize } = message as any;
           if (!transferId || !fileName) break;
-          
-          // Initialize or retrieve transfer state
+
           if (!FolderBrowserPanel.pendingChunkTransfers) {
             FolderBrowserPanel.pendingChunkTransfers = new Map();
           }
           const transfers = FolderBrowserPanel.pendingChunkTransfers;
-          
+
           let transfer = transfers.get(transferId);
           if (!transfer) {
-            const tempDir = path.join(os.tmpdir(), 'vscode-s3-uploads');
-            fs.mkdirSync(tempDir, { recursive: true });
-            const tempFile = path.join(tempDir, transferId);
-            transfer = { fileName, tempFile, totalChunks, receivedChunks: 0 };
-            transfers.set(transferId, transfer);
-            fs.writeFileSync(tempFile, Buffer.alloc(0));
-            
-            // Register task in task manager
-            transfer.taskId = taskManager.add({
+            const taskId = taskManager.add({
               type: 'upload',
               fileName,
               size: fileSize,
@@ -685,8 +679,31 @@ export class FolderBrowserPanel {
               connectionName: conn2.name,
               bucket: conn2.bucket,
             });
-            
-            // Start progress bar
+
+            if (!conn2.isHuaweiOBS) {
+              const passThrough = new stream.PassThrough();
+              const { Upload } = await import('@aws-sdk/lib-storage');
+              const uploadClient = createClient(conn2);
+              const upload = new Upload({
+                client: uploadClient as any,
+                params: { Bucket: conn2.bucket, Key: this.prefix + fileName, Body: passThrough },
+                queueSize: 4,
+                partSize: 1024 * 1024 * 16,
+                leavePartsOnError: false,
+              });
+              upload.on('httpUploadProgress', (p: { loaded?: number; total?: number }) => {
+                taskManager.updateProgress(taskId, Math.round((p.loaded ?? 0) / (p.total ?? fileSize) * 100));
+              });
+              transfer = { fileName, totalChunks, receivedChunks: 0, taskId, passThrough, uploadDone: upload.done() };
+            } else {
+              const tempDir = path.join(os.tmpdir(), 'vscode-s3-uploads');
+              fs.mkdirSync(tempDir, { recursive: true });
+              const tempFile = path.join(tempDir, transferId);
+              fs.writeFileSync(tempFile, Buffer.alloc(0));
+              transfer = { fileName, tempFile, totalChunks, receivedChunks: 0, taskId };
+            }
+            transfers.set(transferId, transfer);
+
             vscode.window.withProgress(
               { location: vscode.ProgressLocation.Window, title: t('msg_uploadTitle', fileName) },
               (p) => new Promise<void>(resolve => {
@@ -695,35 +712,43 @@ export class FolderBrowserPanel {
               })
             );
           }
-          
+
           const chunkBuf = Buffer.from(chunk);
-          const writeFd = await fs.promises.open(transfer.tempFile, 'r+');
-          await writeFd.write(chunkBuf, 0, chunkBuf.length, chunkIndex * FolderBrowserPanel.CHUNK_SIZE);
-          await writeFd.close();
+          if (transfer.passThrough) {
+            transfer.passThrough.write(chunkBuf);
+          } else {
+            const writeFd = await fs.promises.open(transfer.tempFile!, 'r+');
+            await writeFd.write(chunkBuf, 0, chunkBuf.length, chunkIndex * FolderBrowserPanel.CHUNK_SIZE);
+            await writeFd.close();
+          }
           transfer.receivedChunks++;
-          
-          // Update progress in progress bar only (task progress is tracked by uploadFile)
+
           const pct = Math.round(transfer.receivedChunks / totalChunks * 100);
           transfer.progress?.report({ increment: 100 / totalChunks, message: `${pct}% (${transfer.receivedChunks}/${totalChunks})` });
-          
+
           if (transfer.receivedChunks >= totalChunks) {
-            // All chunks received — upload via streaming API
             transfer.progress?.report({ message: fileName + ' - ' + t('msg_uploading', 1) });
             const client = createClient(conn2);
             try {
-              await uploadFile(client, conn2.bucket, this.prefix + fileName, transfer.tempFile, undefined, (pct) => {
-                taskManager.updateProgress(transfer.taskId, pct);
-              });
+              if (transfer.passThrough) {
+                transfer.passThrough.end();
+                await transfer.uploadDone;
+              } else {
+                await uploadFile(client, conn2.bucket, this.prefix + fileName, transfer.tempFile!, undefined, (pct) => {
+                  taskManager.updateProgress(transfer.taskId, pct);
+                });
+              }
               taskManager.complete(transfer.taskId);
             } catch (err: any) {
               taskManager.fail(transfer.taskId, err.message);
             } finally {
               transfer.progressResolve?.();
               transfers.delete(transferId);
-              try { fs.unlinkSync(transfer.tempFile); } catch {}
+              if (transfer.tempFile) {
+                try { fs.unlinkSync(transfer.tempFile); } catch {}
+              }
             }
-            
-            // Refresh view
+
             this.items = [];
             this.nextToken = undefined;
             this.loading = false;
@@ -1815,7 +1840,7 @@ document.addEventListener('drop', async e => {
 
   // Files <= 5MB use base64 (single message, no IPC fragmentation issues)
   const MAX_BASE64_SIZE = 5 * 1024 * 1024;
-  const CHUNK_SIZE = 1024 * 1024;
+  const CHUNK_SIZE = 5 * 1024 * 1024;
 
   const smallFiles = [];
   for (const file of files) {
@@ -1845,8 +1870,6 @@ document.addEventListener('drop', async e => {
             totalChunks,
             fileSize: file.size,
           });
-          // Throttle to prevent IPC queue overflow
-          await new Promise(r => setTimeout(r, 30));
         }
       } catch (e2) {
         vscodeApi.postMessage({ type: 'showError', text: 'Chunk upload failed for ' + file.name + ': ' + (e2.message || e2) });
