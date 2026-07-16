@@ -696,7 +696,7 @@ export class FolderBrowserPanel {
             );
           }
           
-          const chunkBuf = Buffer.from(chunk, 'base64');
+          const chunkBuf = Buffer.from(chunk);
           const writeFd = await fs.promises.open(transfer.tempFile, 'r+');
           await writeFd.write(chunkBuf, 0, chunkBuf.length, chunkIndex * FolderBrowserPanel.CHUNK_SIZE);
           await writeFd.close();
@@ -1829,23 +1829,18 @@ document.addEventListener('drop', async e => {
     } else {
       // Files > 5MB use chunk upload with throttled sends
       const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-      const transferId = file.name + '-' + file.size + '-' + Date.now();
+      const transferId = file.name.replace(/[/\]/g, '_') + '-' + file.size + '-' + Date.now();
       try {
         for (let i = 0; i < totalChunks; i++) {
           const start = i * CHUNK_SIZE;
           const end = Math.min(start + CHUNK_SIZE, file.size);
           const blob = file.slice(start, end);
-          const dataUrl = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-          });
+          const arrayBuf = await blob.arrayBuffer();
           vscodeApi.postMessage({
             type: 'uploadDropChunk',
             transferId,
             fileName: file.name,
-            chunk: dataUrl.split(',')[1],
+            chunk: new Uint8Array(arrayBuf),
             chunkIndex: i,
             totalChunks,
             fileSize: file.size,
@@ -1853,7 +1848,9 @@ document.addEventListener('drop', async e => {
           // Throttle to prevent IPC queue overflow
           await new Promise(r => setTimeout(r, 30));
         }
-      } catch (e) { console.error('chunk upload error', e); }
+      } catch (e2) {
+        vscodeApi.postMessage({ type: 'showError', text: 'Chunk upload failed for ' + file.name + ': ' + (e2.message || e2) });
+      }
     }
   }
 
@@ -1891,13 +1888,14 @@ async function getFilesFromDrop(dt) {
 async function readFileEntry(entry, path, files) {
   try {
     const file = await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('timeout')), 8000);
-      entry.file(f => { clearTimeout(timer); resolve(f); });
+      entry.file(f => resolve(f), err => reject(err));
     });
     if (!file || file.name.startsWith('.')) return;
     Object.defineProperty(file, 'name', { value: path + file.name });
-    if (file.size > 0) files.push(file);
-  } catch {}
+    files.push(file);
+  } catch (e2) {
+    vscodeApi.postMessage({ type: 'showError', text: 'Failed to read file: ' + (path || '') + entry.name + ': ' + (e2.message || e2) });
+  }
 }
 
 async function readDir(dirEntry, path, files) {
