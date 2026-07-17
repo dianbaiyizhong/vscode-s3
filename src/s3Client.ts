@@ -11,6 +11,7 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   CopyObjectCommand,
+  PutObjectTaggingCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
   ObjectIdentifier,
@@ -42,9 +43,6 @@ class ObsClientWrapper implements IObjectClient {
   async send(command: any): Promise<any> {
     const name: string = command.constructor.name || '';
     const input = command.input || {};
-
-    if (name.includes('GetObjectTagging'))
-      return { TagSet: [] };
 
     if (name.includes('ListObjectsV2')) {
       const result = await this.client.listObjects({
@@ -92,6 +90,26 @@ class ObsClientWrapper implements IObjectClient {
     }
     if (name.includes('HeadObject')) {
       const result = await this.client.getObjectMetadata(input);
+      const common = result.CommonMsg || {};
+      if (common.Status >= 300) this.throwError(common);
+      return result.InterfaceResult || result;
+    }
+    if (name.includes('GetObjectTagging')) {
+      const result = await this.client.getObjectTagging(input);
+      const common = result.CommonMsg || {};
+      if (common.Status >= 300) this.throwError(common);
+      const data = result.InterfaceResult || result;
+      return { TagSet: data.TagSet || data.Tags || [] };
+    }
+    if (name.includes('PutObjectTagging')) {
+      const tags = input.Tagging?.TagSet || [];
+      const result = await this.client.setObjectTagging({ Bucket: input.Bucket, Key: input.Key, Tags: tags });
+      const common = result.CommonMsg || {};
+      if (common.Status >= 300) this.throwError(common);
+      return result.InterfaceResult || result;
+    }
+    if (name.includes('DeleteObjectTagging')) {
+      const result = await this.client.deleteObjectTagging(input);
       const common = result.CommonMsg || {};
       if (common.Status >= 300) this.throwError(common);
       return result.InterfaceResult || result;
@@ -721,9 +739,16 @@ export async function putObjectTags(
   key: string,
   tags: { key: string; value: string }[]
 ): Promise<void> {
-  // Two-step copy via temp key to safely set tags on all S3-compatible
-  // stores (MinIO: PutObjectTagging corrupts content, CopyObject ignores
-  // TaggingDirective on self-copy; OBS: PutObjectTagging unsupported).
+  if (client instanceof ObsClientWrapper) {
+    await client.send(new PutObjectTaggingCommand({
+      Bucket: bucket,
+      Key: key,
+      Tagging: { TagSet: tags.map(t => ({ Key: t.key, Value: t.value })) },
+    }));
+    return;
+  }
+  // Two-step copy via temp key to safely set tags on MinIO
+  // (PutObjectTagging corrupts content; CopyObject ignores TaggingDirective on self-copy).
   const tempKey = key + '.s3btmp.' + Date.now() + '.' + Math.random().toString(36).slice(2, 6);
 
   await client.send(new CopyObjectCommand({
