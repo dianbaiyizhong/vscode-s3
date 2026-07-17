@@ -3,11 +3,11 @@ import * as os from "os";
 import * as path from 'path';
 import * as fs from 'fs';
 import * as stream from 'stream';
-import { createClient, listObjects, uploadFile, downloadFile, downloadFolder, deleteObject, deleteFolder, renameObject, renameFolder, createFolder, S3ObjectInfo, ProgressFn } from './s3Client';
+import { createClient, listObjects, uploadFile, downloadFile, downloadFolder, deleteObject, deleteFolder, renameObject, renameFolder, createFolder, putObjectTags, changeStorageClass, copyObject, listMultipartUploads, abortMultipartUpload, S3ObjectInfo, ProgressFn, ObjectDetail } from './s3Client';
 import { taskManager } from './taskManager';
 import { TaskViewPanel } from './taskViewPanel';
 import { ConnectionManager } from './connectionManager';
-import { JumpRecord } from './jumpHistory';
+import { JumpRecord, JumpHistory } from './jumpHistory';
 import { t } from './i18n';
 
 export class FolderBrowserPanel {
@@ -31,12 +31,13 @@ export class FolderBrowserPanel {
     label: string,
     onNavigate: (connectionId: string, prefix: string) => void,
     getHistoryRecords?: () => JumpRecord[],
-    skipInitialLoad = false
+    skipInitialLoad = false,
+    jumpHistory?: JumpHistory,
   ): FolderBrowserPanel {
     // Close task view when opening a connection
     TaskViewPanel.currentPanel?.dispose();
     const column = vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.One;
-    return new FolderBrowserPanel(column, connectionManager, connectionId, prefix, label, onNavigate, getHistoryRecords, skipInitialLoad);
+    return new FolderBrowserPanel(column, connectionManager, connectionId, prefix, label, onNavigate, getHistoryRecords, skipInitialLoad, jumpHistory);
   }
 
   private panel: vscode.WebviewPanel;
@@ -52,6 +53,7 @@ export class FolderBrowserPanel {
   private searchMode: string = 'prefix';
   private singleFileKey?: string;
   private searchPrefix?: string;
+  private segments: string[] = [];
   private static folderIcon: string = '';
   private static fileIcon: string = '';
   private static extIcons: Record<string, string> = {};
@@ -66,10 +68,12 @@ export class FolderBrowserPanel {
     label: string,
     private onNavigate: (connectionId: string, prefix: string) => void,
     getHistoryRecords?: () => JumpRecord[],
-    skipInitialLoad = false
+    skipInitialLoad = false,
+    private jumpHistory?: JumpHistory,
   ) {
     this.connectionId = connectionId;
     this.prefix = prefix;
+    this.segments = prefix ? prefix.replace(/\/$/, '').split('/').filter(Boolean) : [];
     this.getHistoryRecords = getHistoryRecords;
     const conn = connectionManager.getConnection(connectionId);
     this.connectionName = conn?.name || label;
@@ -338,7 +342,7 @@ export class FolderBrowserPanel {
           if (!conn) return;
           const item = message.item as S3ObjectInfo;
           const client = createClient(conn);
-          const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+          const { HeadObjectCommand, GetObjectTaggingCommand } = await import('@aws-sdk/client-s3');
           const { getFolderInfo } = await import('./s3Client');
           const items: { label: string; value: string }[] = [
             { label: t('msg_infoKey'), value: item.key },
@@ -376,6 +380,15 @@ export class FolderBrowserPanel {
               }
             }
           } catch { /* use basic info */ }
+          try {
+            const tagResult = await client.send(new GetObjectTaggingCommand({ Bucket: conn.bucket, Key: item.key }));
+            const tags = (tagResult.TagSet || []).filter((t: any) => t.Key && t.Value);
+            if (tags.length > 0) {
+              for (const t of tags) {
+                items.push({ label: '🏷️ ' + t.Key, value: t.Value });
+              }
+            }
+          } catch { /* tags not supported */ }
           const picks = items.map(i => ({
             label: i.label,
             description: i.value,
@@ -388,6 +401,392 @@ export class FolderBrowserPanel {
           if (pick) {
             vscode.env.clipboard.writeText(pick.description || '');
             vscode.window.setStatusBarMessage(`$(link) ${t('msg_copiedPath', pick.description)}`, 2000);
+          }
+          break;
+        }
+        case 'showBookmarks': {
+          if (!this.jumpHistory) break;
+          const bms = this.jumpHistory.getBookmarks();
+          if (bms.length === 0) {
+            vscode.window.showInformationMessage(t('msg_noBookmarks'));
+            break;
+          }
+          const picks = bms.map(b => ({
+            label: b.label || b.key.split('/').filter(Boolean).pop() || b.key,
+            description: b.key,
+            detail: b.connectionName,
+            connectionId: b.connectionId,
+            key: b.key,
+          }));
+          const pick = await vscode.window.showQuickPick(picks, {
+            title: t('msg_bookmarks'),
+            matchOnDescription: true,
+          });
+          if (!pick) break;
+          const bmConn = this.connectionManager.getConnection(pick.connectionId);
+          if (!bmConn) {
+            vscode.window.showErrorMessage('Connection not found');
+            break;
+          }
+          const segments = pick.key.replace(/\/$/, '').split('/');
+          const bmPrefix = pick.key.endsWith('/') || segments.length <= 1 ? '' : segments.slice(0, -1).join('/') + '/';
+          this.connectionId = pick.connectionId;
+          this.prefix = bmPrefix;
+          this.segments = bmPrefix ? bmPrefix.replace(/\/$/, '').split('/').filter(Boolean) : [];
+          const isFile = !pick.key.endsWith('/') && segments.length > 0;
+          this.singleFileKey = isFile ? pick.key : undefined;
+          this.searchPattern = undefined;
+          this.searchPrefix = undefined;
+          this.items = [];
+          this.nextToken = undefined;
+          this.render();
+          if (this.singleFileKey) {
+            await vscode.window.withProgress(
+              { location: vscode.ProgressLocation.Window, title: t('msg_navigating') },
+              async () => {
+                const client = createClient(bmConn);
+                const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+                try {
+                  const head = await client.send(new HeadObjectCommand({ Bucket: bmConn.bucket, Key: this.singleFileKey! }));
+                  this.items = [{ key: this.singleFileKey!, isFolder: false, size: head.ContentLength, lastModified: head.LastModified }];
+                } catch {
+                  this.singleFileKey = undefined;
+                }
+              }
+            );
+          } else {
+            await this.loadItems();
+          }
+          this.render();
+          break;
+        }
+        case 'toggleBookmark': {
+          if (!this.jumpHistory) break;
+          const connBM = this.connectionManager.getConnection(this.connectionId);
+          if (!connBM) break;
+          const itemBM = message.item as S3ObjectInfo;
+          const label = itemBM.key.split('/').filter(Boolean).pop() || itemBM.key;
+          const nowBookmarked = this.jumpHistory.toggleBookmark(this.connectionId, itemBM.key);
+          vscode.window.showInformationMessage(nowBookmarked ? t('msg_bookmarkAdded', label) : t('msg_bookmarkRemoved'));
+          break;
+        }
+        case 'openBookmark': {
+          const bm = message.bookmark as JumpRecord;
+          if (!bm) break;
+          const bmConn = this.connectionManager.getConnection(bm.connectionId);
+          if (!bmConn) {
+            vscode.window.showErrorMessage('Connection not found: ' + bm.connectionName);
+            break;
+          }
+          const bmSegments = bm.key.replace(/\/$/, '').split('/');
+          const bmPrefix = bm.key.endsWith('/') || bmSegments.length === 0 ? bm.key : bmSegments.slice(0, -1).join('/') + '/';
+          this.connectionId = bm.connectionId;
+          this.prefix = bmPrefix;
+          this.segments = bmPrefix ? bmPrefix.replace(/\/$/, '').split('/').filter(Boolean) : [];
+          this.singleFileKey = !bm.key.endsWith('/') && bmSegments.length > 0 ? bm.key : undefined;
+          this.searchPattern = undefined;
+          this.searchPrefix = undefined;
+          this.items = [];
+          this.nextToken = undefined;
+          this.render();
+          if (this.singleFileKey) {
+            await vscode.window.withProgress(
+              { location: vscode.ProgressLocation.Window, title: t('msg_navigating') },
+              async () => {
+                const client = createClient(bmConn);
+                const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+                try {
+                  const head = await client.send(new HeadObjectCommand({ Bucket: bmConn.bucket, Key: this.singleFileKey! }));
+                  this.items = [{ key: this.singleFileKey!, isFolder: false, size: head.ContentLength, lastModified: head.LastModified }];
+                } catch {
+                  this.singleFileKey = undefined;
+                }
+              }
+            );
+          } else {
+            await this.loadItems();
+          }
+          this.render();
+          break;
+        }
+        case 'editTags': {
+          const connET = this.connectionManager.getConnection(this.connectionId);
+          if (!connET) return;
+          const itemET = message.item as S3ObjectInfo;
+          const result = await vscode.window.showInputBox({
+            title: t('msg_editTags', itemET.key),
+            prompt: t('msg_editTagsPrompt'),
+            ignoreFocusOut: true,
+          });
+          if (result === undefined) break;
+          const newTags = result ? result.split(',').map(s => {
+            const [k, ...v] = s.trim().split('=');
+            return { key: k.trim(), value: v.join('=').trim() };
+          }).filter(t => t.key && t.value) : [];
+          try {
+            await putObjectTags(createClient(connET), connET.bucket, itemET.key, newTags);
+            if (newTags.length > 0) {
+              const tagStr = newTags.map(t => `${t.key}=${t.value}`).join(', ');
+              vscode.window.showInformationMessage(t('msg_tagsUpdated') + ' (' + tagStr + ')');
+            } else {
+              vscode.window.showInformationMessage(t('msg_tagsUpdated'));
+            }
+          } catch (err: any) {
+            vscode.window.showErrorMessage(t('msg_tagsFailed', err.message));
+          }
+          break;
+        }
+        case 'changeStorageClass': {
+          const connSC = this.connectionManager.getConnection(this.connectionId);
+          if (!connSC) return;
+          const itemSC = message.item as S3ObjectInfo;
+          // MinIO / non-AWS S3-compatible stores only support STANDARD.
+          // OBS uses different names (STANDARD, WARM, COLD).
+          let storageClasses: string[];
+          if (connSC.isHuaweiOBS) {
+            storageClasses = ['STANDARD', 'WARM', 'COLD'];
+          } else if (!connSC.endpoint || connSC.endpoint.includes('amazonaws.com')) {
+            storageClasses = ['STANDARD', 'REDUCED_REDUNDANCY', 'STANDARD_IA', 'ONEZONE_IA',
+              'INTELLIGENT_TIERING', 'GLACIER', 'DEEP_ARCHIVE'];
+          } else {
+            storageClasses = ['STANDARD'];
+          }
+          const scPick = await vscode.window.showQuickPick(storageClasses,
+            { title: t('msg_changeStorageClass', itemSC.key) });
+          if (!scPick) break;
+          try {
+            await vscode.window.withProgress(
+              { location: vscode.ProgressLocation.Notification, title: t('msg_changeStorageClass', itemSC.key) },
+              () => changeStorageClass(createClient(connSC), connSC.bucket, itemSC.key, scPick)
+            );
+            vscode.window.showInformationMessage(t('msg_storageClassChanged', scPick));
+          } catch (err: any) {
+            vscode.window.showErrorMessage(t('msg_storageClassFailed', err.message));
+          }
+          break;
+        }
+        case 'copyTo': {
+          const connCP = this.connectionManager.getConnection(this.connectionId);
+          if (!connCP) return;
+          const itemCP = message.item as S3ObjectInfo;
+          const destKey = await vscode.window.showInputBox({
+            title: t('msg_copyDestination'),
+            value: itemCP.key,
+            ignoreFocusOut: true,
+          });
+          if (!destKey) break;
+          try {
+            await vscode.window.withProgress(
+              { location: vscode.ProgressLocation.Notification, title: t('msg_copying', itemCP.key) },
+              () => copyObject(createClient(connCP), connCP.bucket, itemCP.key, connCP.bucket, destKey)
+            );
+            vscode.window.showInformationMessage(t('msg_copiedTo', destKey));
+          } catch (err: any) {
+            vscode.window.showErrorMessage(t('msg_copyFailed', err.message));
+          }
+          break;
+        }
+        case 'downloadZip': {
+          const connZip = this.connectionManager.getConnection(this.connectionId);
+          if (!connZip) break;
+          const itemZip = message.item as S3ObjectInfo;
+          if (!itemZip.isFolder) break;
+          const defaultUri = vscode.workspace.workspaceFolders?.[0]?.uri;
+          const saveUri = await vscode.window.showSaveDialog({
+            defaultUri: defaultUri ? vscode.Uri.joinPath(defaultUri, itemZip.key.replace(/[/]/g, '_').replace(/\/$/, '') + '.zip') : undefined,
+            filters: { 'ZIP Files': ['zip'] },
+            title: t('msg_creatingZip', itemZip.key),
+          });
+          if (!saveUri) break;
+          try {
+            await vscode.window.withProgress(
+              { location: vscode.ProgressLocation.Window, title: t('msg_creatingZip', itemZip.key) },
+              async (progress) => {
+                const client = createClient(connZip);
+                const files: S3ObjectInfo[] = [];
+                let cursor: string | undefined;
+                for (let i = 0; i < 200; i++) {
+                  const page = await listObjects(client, connZip.bucket, itemZip.key, 1, undefined, cursor, 1000);
+                  files.push(...page.items);
+                  if (!page.nextToken) break;
+                  cursor = page.nextToken;
+                }
+                progress.report({ message: t('msg_creatingZip', `${files.length} files`) });
+                const { default: archiver } = await import('archiver');
+                const archive = archiver('zip', { zlib: { level: 1 } });
+                const writeStream = fs.createWriteStream(saveUri.fsPath);
+                archive.pipe(writeStream);
+                for (let i = 0; i < files.length; i++) {
+                  const f = files[i];
+                  if (f.isFolder) continue;
+                  const relPath = f.key.startsWith(itemZip.key) ? f.key.slice(itemZip.key.length) : f.key;
+                  const body = await client.send(new (await import('@aws-sdk/client-s3')).GetObjectCommand({ Bucket: connZip.bucket, Key: f.key }));
+                  const chunks: Buffer[] = [];
+                  for await (const chunk of (body.Body || new Uint8Array()) as any) {
+                    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+                  }
+                  archive.append(Buffer.concat(chunks), { name: relPath });
+                  progress.report({ message: `${i + 1}/${files.length} ${relPath}`, increment: Math.round(100 / files.length) });
+                }
+                await archive.finalize();
+                await new Promise<void>((resolve, reject) => writeStream.on('finish', resolve).on('error', reject));
+              }
+            );
+            vscode.window.showInformationMessage(t('msg_zipCreated', saveUri.fsPath));
+          } catch (err: any) {
+            vscode.window.showErrorMessage(t('msg_zipFailed', err.message));
+          }
+          break;
+        }
+        case 'shareLink': {
+          const connSL = this.connectionManager.getConnection(this.connectionId);
+          if (!connSL) break;
+          const itemSL = message.item as S3ObjectInfo;
+          const expiry = await vscode.window.showInputBox({
+            title: t('msg_shareLinkExpiry'),
+            value: '60',
+            validateInput: (v) => isNaN(Number(v)) || Number(v) <= 0 ? 'Enter a positive number' : undefined,
+          });
+          if (!expiry) break;
+          try {
+            const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+            const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+            const client = createClient(connSL);
+            const url = await vscode.window.withProgress(
+              { location: vscode.ProgressLocation.Notification, title: t('msg_generatingLink') },
+              () => getSignedUrl(client as any, new GetObjectCommand({ Bucket: connSL.bucket, Key: itemSL.key }), { expiresIn: Number(expiry) * 60 })
+            );
+            vscode.env.clipboard.writeText(url);
+            vscode.window.showInformationMessage(t('msg_shareLink', url));
+          } catch (err: any) {
+            vscode.window.showErrorMessage(t('msg_shareLinkFailed', err.message));
+          }
+          break;
+        }
+        case 'versions': {
+          const connVer = this.connectionManager.getConnection(this.connectionId);
+          if (!connVer) break;
+          const itemVer = message.item as S3ObjectInfo;
+          try {
+            const { ListObjectVersionsCommand } = await import('@aws-sdk/client-s3');
+            const client = createClient(connVer);
+            const result = await vscode.window.withProgress(
+              { location: vscode.ProgressLocation.Notification, title: t('msg_loadingVersions') },
+              () => client.send(new ListObjectVersionsCommand({ Bucket: connVer.bucket, Prefix: itemVer.key }))
+            );
+            const versions = (result.Versions || []).filter((v: any) => v.Key === itemVer.key);
+            const deleteMarkers = (result.DeleteMarkers || []).filter((v: any) => v.Key === itemVer.key);
+            if (versions.length === 0 && deleteMarkers.length === 0) {
+              vscode.window.showInformationMessage(t('msg_noVersions'));
+              break;
+            }
+            const picks = [
+              ...versions.map((v: any) => ({
+                label: `${v.IsLatest ? '✓ ' : ''}${v.VersionId}`,
+                description: `${t('msg_infoLastModified')}: ${v.LastModified?.toLocaleString()}`,
+                detail: `${t('msg_infoSize')}: ${formatSize(v.Size)} | ${t('msg_infoStorageClass')}: ${v.StorageClass || 'STANDARD'}`,
+                versionId: v.VersionId,
+                isDeleteMarker: false,
+              })),
+              ...deleteMarkers.map((v: any) => ({
+                label: `${v.IsLatest ? '✓ ' : ''}${v.VersionId} (Delete Marker)`,
+                description: `${t('msg_infoLastModified')}: ${v.LastModified?.toLocaleString()}`,
+                detail: '',
+                versionId: v.VersionId,
+                isDeleteMarker: true,
+              })),
+            ];
+            const pick = await vscode.window.showQuickPick(picks, {
+              title: t('wv_versions') + ' - ' + itemVer.key,
+              matchOnDescription: true,
+              matchOnDetail: true,
+            });
+            if (!pick || pick.isDeleteMarker) break;
+            const action = await vscode.window.showQuickPick(
+              [{ label: 'Download this version' }, { label: 'Restore this version (copy to current)' }],
+              { title: `Version ${pick.versionId}` }
+            );
+            if (!action) break;
+            if (action.label.startsWith('Download')) {
+              const uri = await vscode.window.showSaveDialog({ defaultUri: vscode.Uri.file(itemVer.key.split('/').pop() || 'file') });
+              if (!uri) break;
+              const body = await client.send(new (await import('@aws-sdk/client-s3')).GetObjectCommand({
+                Bucket: connVer.bucket, Key: itemVer.key, VersionId: pick.versionId,
+              }));
+              const chunks: Buffer[] = [];
+              for await (const chunk of (body.Body || new Uint8Array()) as any) {
+                chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+              }
+              fs.writeFileSync(uri.fsPath, Buffer.concat(chunks));
+              vscode.window.showInformationMessage(t('msg_copiedTo', uri.fsPath));
+            } else {
+              await client.send(new (await import('@aws-sdk/client-s3')).CopyObjectCommand({
+                Bucket: connVer.bucket, Key: itemVer.key,
+                CopySource: `/${connVer.bucket}/${itemVer.key}?versionId=${pick.versionId}`,
+              }));
+              vscode.window.showInformationMessage(t('msg_versionRestored', pick.versionId));
+            }
+          } catch (err: any) {
+            vscode.window.showErrorMessage(t('msg_versionRestoreFailed', err.message));
+          }
+          break;
+        }
+        case 'multipartUploads': {
+          const connMU = this.connectionManager.getConnection(this.connectionId);
+          if (!connMU) break;
+          try {
+            const clientMU = createClient(connMU);
+            const uploads = await vscode.window.withProgress(
+              { location: vscode.ProgressLocation.Notification, title: 'Listing multipart uploads...' },
+              () => listMultipartUploads(clientMU, connMU.bucket, this.searchPrefix || this.prefix)
+            );
+            if (uploads.length === 0) {
+              vscode.window.showInformationMessage(t('msg_noMultipartUploads'));
+              break;
+            }
+            const picks = uploads.map(u => ({
+              label: u.key,
+              description: `Initiated: ${u.initiated?.toLocaleString()}`,
+              detail: `Upload ID: ${u.uploadId.substring(0, 20)}...`,
+              uploadId: u.uploadId,
+              key: u.key,
+            }));
+            const pick = await vscode.window.showQuickPick(picks, {
+              title: t('wv_multipartUploads'),
+              matchOnDescription: true,
+            });
+            if (!pick) break;
+            const confirm = await vscode.window.showQuickPick(
+              [{ label: 'Abort Upload', description: 'This cannot be undone' }, { label: 'Cancel' }],
+              { title: t('msg_abortingUpload', pick.key) }
+            );
+            if (!confirm || confirm.label === 'Cancel') break;
+            await abortMultipartUpload(clientMU, connMU.bucket, pick.key, pick.uploadId);
+            vscode.window.showInformationMessage(t('msg_uploadAborted'));
+          } catch (err: any) {
+            vscode.window.showErrorMessage(t('msg_uploadAbortFailed', err.message));
+          }
+          break;
+        }
+        case 'editFile': {
+          const connEF = this.connectionManager.getConnection(this.connectionId);
+          if (!connEF) break;
+          const itemEF = message.item as S3ObjectInfo;
+          if (itemEF.isFolder) break;
+          const { PreviewManager } = await import('./previewManager');
+          const previewMan = new PreviewManager();
+          const tempPath = previewMan.getTempPath(this.connectionId, itemEF.key);
+          previewMan.ensureParentDir(tempPath);
+          try {
+            await vscode.window.withProgress(
+              { location: vscode.ProgressLocation.Window, title: t('msg_editPreparing') },
+              () => downloadFile(createClient(connEF), connEF.bucket, itemEF.key, tempPath)
+            );
+            previewMan.registerMapping(tempPath, this.connectionId, connEF.bucket, itemEF.key);
+            const doc = await vscode.workspace.openTextDocument(tempPath);
+            await vscode.window.showTextDocument(doc, { preview: false });
+          } catch (err: any) {
+            vscode.window.showErrorMessage(err.message);
           }
           break;
         }
@@ -1215,6 +1614,8 @@ function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loadin
   const iconCopy = (actionIcons && actionIcons['copypath']) || '&#x1F4CB;';
   const iconCopyName = (actionIcons && actionIcons['copyfilename']) || '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="1" width="9" height="11" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="4" y="7" width="5" height="1.5" rx="0.75" fill="currentColor"/><rect x="4" y="4.5" width="3.5" height="1.5" rx="0.75" fill="currentColor"/></svg>';
   const iconDownload = (actionIcons && actionIcons['download']) || '&#x2B07;';
+  const bookmarkSvg = (actionIcons && actionIcons['bookmark']) || '&#x2B50;';
+  const taskviewSvg = (actionIcons && actionIcons['taskview']) || '&#x2630;';
   const folderIconSvg = folderSvg || '&#x1F4C1;';
   const fileIconSvg = fileSvg || '&#x1F4C4;';
   const folderRows = items.filter(i => i.isFolder).map(i => {
@@ -1617,7 +2018,8 @@ body {
   <button class="icon-btn" id="refreshBtn" title="${t('wv_refresh')}" ${refreshing ? 'disabled' : ''}>${refreshSvg}</button>
   <button class="icon-btn" id="newFolderBtn" title="${t('cmd_newFolder')}">${newFolderSvg}</button>
   <button class="icon-btn" id="uploadBtn" title="${t('wv_upload')}">${uploadSvg}</button>
-  <button class="icon-btn" id="taskViewBtn" title="${t('cmd_openTaskView')}">&#x2630;</button>
+  <button class="icon-btn" id="bookmarkBtn" title="${t('msg_bookmarks')}">${bookmarkSvg}</button>
+  <button class="icon-btn" id="taskViewBtn" title="${t('cmd_openTaskView')}">${taskviewSvg}</button>
   <span class="header-sep"></span>
   <button class="icon-btn" id="dlBatchBtn" title="${t('wv_downloadSelected')}" disabled>${iconDownload}</button>
   <button class="icon-btn" id="delBatchBtn" title="${t('wv_deleteSelected')}" disabled>${iconDelete}</button>
@@ -1660,6 +2062,17 @@ const vscodeApi = acquireVsCodeApi();
     info: t('wv_info'),
     tooLarge: t('msg_tooLarge'),
     newFolder: t('cmd_newFolder'),
+    editTags: t('wv_editTags'),
+    changeStorageClass: t('wv_changeStorageClass'),
+    copyTo: t('wv_copyTo'),
+    shareLink: t('wv_shareLink'),
+    edit: t('wv_edit'),
+    versions: t('wv_versions'),
+    downloadZip: t('wv_downloadZip'),
+    multipartUploads: t('wv_multipartUploads'),
+    bookmark: t('wv_bookmark'),
+    bookmarks: t('msg_bookmarks'),
+    noBookmarks: t('msg_noBookmarks'),
   })};
   const actionIcons2 = ${JSON.stringify(actionIcons || {})};
 
@@ -1782,11 +2195,19 @@ document.addEventListener('contextmenu', e => {
   const item = JSON.parse(itemEl.dataset.item);
   const isFile = !item.isFolder;
   ctxMenu.innerHTML = '';
+  const addSep = () => {
+    const sep = document.createElement('div');
+    sep.className = 'cm-sep';
+    ctxMenu.appendChild(sep);
+  };
   const addItem = (icon, text, action) => {
     const div = document.createElement('div');
     div.className = 'cm-item';
     div.innerHTML = icon + ' ' + text;
-    div.addEventListener('click', () => { ctxMenu.classList.remove('show'); vscodeApi.postMessage({ type: action, item }); });
+    div.addEventListener('click', () => {
+      ctxMenu.classList.remove('show');
+      vscodeApi.postMessage({ type: action, item });
+    });
     ctxMenu.appendChild(div);
   };
   const ai = actionIcons2 || {};
@@ -1796,7 +2217,20 @@ document.addEventListener('contextmenu', e => {
   if (isFile) addItem(ai['download'] || '&#x2B07;', l10n.download, 'download');
   addItem(ai['delete'] || '&#x1F5D1;', l10n.delete, 'delete');
   addItem(ai['copypath'] || '&#x1F4CB;', l10n.copyPath, 'copyPath');
-  addItem(ai['copyfilename'] || '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="1" width="9" height="11" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="4" y="7" width="5" height="1.5" rx="0.75" fill="currentColor"/><rect x="4" y="4.5" width="3.5" height="1.5" rx="0.75" fill="currentColor"/></svg>', l10n.copyFileName, 'copyFileName');
+  addItem(ai['copyfilename'] || '&#x1F4CB;', l10n.copyFileName, 'copyFileName');
+  addSep();
+  addItem(ai['edittags'] || '&#x1F3F7;', l10n.editTags, 'editTags');
+  addItem(ai['changestorageclass'] || '&#x1F504;', l10n.changeStorageClass, 'changeStorageClass');
+  addItem(ai['copyto'] || '&#x1F4C4;', l10n.copyTo, 'copyTo');
+  if (isFile) addItem(ai['sharelink'] || '&#x1F517;', l10n.shareLink, 'shareLink');
+  if (isFile) addItem(ai['editfile'] || '&#x1F4DD;', l10n.edit, 'editFile');
+  if (isFile) addItem(ai['versions'] || '&#x1F4C2;', l10n.versions, 'versions');
+  if (item.isFolder) {
+    addItem(ai['downloadzip'] || '&#x1F4E6;', l10n.downloadZip, 'downloadZip');
+  }
+  addItem(ai['multipartuploads'] || '&#x1F4CB;', l10n.multipartUploads, 'multipartUploads');
+  addSep();
+  addItem(ai['bookmark'] || '&#x2B50;', l10n.bookmark, 'toggleBookmark');
   ctxMenu.style.left = e.clientX + 'px';
   ctxMenu.style.top = e.clientY + 'px';
   ctxMenu.classList.add('show');
@@ -1981,6 +2415,9 @@ document.getElementById('uploadBtn')?.addEventListener('click', () => {
 });
 document.getElementById('taskViewBtn')?.addEventListener('click', () => {
   vscodeApi.postMessage({ type: 'openTaskView' });
+});
+document.getElementById('bookmarkBtn')?.addEventListener('click', () => {
+  vscodeApi.postMessage({ type: 'showBookmarks' });
 });
 const filterInput = document.getElementById('filterInput');
 const searchModeSelect = document.getElementById('searchModeSelect');

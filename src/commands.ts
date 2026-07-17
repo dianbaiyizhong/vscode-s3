@@ -58,7 +58,9 @@ function handleOpenConnection(item: S3TreeItem): void {
   FolderBrowserPanel.create(
     connManager, item.connectionId, '', conn.name,
     (id, prefix) => { jumpHistory.addRecord(id, prefix, getLabel(prefix, true), conn.name); },
-    () => jumpHistory.getRecords()
+    () => jumpHistory.getRecords(),
+    false,
+    jumpHistory
   );
 }
 
@@ -103,7 +105,9 @@ async function handleGoToPath(
   const panel = FolderBrowserPanel.create(
     connManager, item.connectionId, prefix, segments[segments.length - 1],
     (id, p) => { jumpHistory.addRecord(id, p, getLabel(p, true), conn.name); },
-    () => jumpHistory.getRecords()
+    () => jumpHistory.getRecords(),
+    false,
+    jumpHistory
   );
   if (!isDir) {
     await panel.goToPath(targetPath);

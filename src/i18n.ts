@@ -246,6 +246,67 @@ const en: Record<string, string> = {
   tv_empty: 'No tasks',
   tv_placeholder: 'Select a task to view details',
   cmd_openTaskView: 'Open Task View',
+
+  // tags
+  wv_editTags: 'Edit Tags',
+  msg_editTags: 'Edit tags for {0}',
+  msg_editTagsPrompt: 'Enter tags as key=value, comma separated (e.g. env=prod,owner=alice)',
+  msg_tagsUpdated: 'Tags updated',
+  msg_tagsFailed: 'Failed to update tags: {0}',
+  msg_infoTags: 'Tags',
+
+  // storage class
+  wv_changeStorageClass: 'Change Storage Class',
+  msg_changeStorageClass: 'Change storage class for {0}',
+  msg_storageClassChanged: 'Storage class changed to {0}',
+  msg_storageClassFailed: 'Failed to change storage class: {0}',
+
+  // copy
+  wv_copyTo: 'Copy to...',
+  msg_copyDestination: 'Destination key (e.g. folder/new-name.txt)',
+  msg_copying: 'Copying {0}...',
+  msg_copiedTo: 'Copied to {0}',
+  msg_copyFailed: 'Failed to copy: {0}',
+
+  // download as zip
+  wv_downloadZip: 'Download as ZIP',
+  msg_creatingZip: 'Creating ZIP for {0}...',
+  msg_zipCreated: 'ZIP created: {0}',
+  msg_zipFailed: 'Failed to create ZIP: {0}',
+
+  // bookmarks
+  wv_bookmark: 'Bookmark',
+  wv_bookmarked: 'Bookmarked',
+  wv_unbookmark: 'Remove Bookmark',
+  msg_bookmarkAdded: 'Bookmarked {0}',
+  msg_bookmarkRemoved: 'Bookmark removed',
+  msg_bookmarks: 'Bookmarks',
+  msg_noBookmarks: 'No bookmarks',
+
+  // quick edit
+  wv_edit: 'Edit File',
+  msg_editPreparing: 'Preparing file for editing...',
+
+  // pre-signed URL
+  wv_shareLink: 'Share Link',
+  msg_generatingLink: 'Generating share link...',
+  msg_shareLinkExpiry: 'Link expires in (minutes)',
+  msg_shareLink: 'Share Link: {0}',
+  msg_shareLinkFailed: 'Failed to generate link: {0}',
+
+  // version
+  wv_versions: 'Versions',
+  msg_loadingVersions: 'Loading versions...',
+  msg_noVersions: 'No previous versions',
+  msg_versionRestored: 'Restored version from {0}',
+  msg_versionRestoreFailed: 'Failed to restore version: {0}',
+
+  // multipart uploads
+  wv_multipartUploads: 'Incomplete Multipart Uploads',
+  msg_noMultipartUploads: 'No incomplete multipart uploads',
+  msg_abortingUpload: 'Aborting upload {0}...',
+  msg_uploadAborted: 'Upload aborted',
+  msg_uploadAbortFailed: 'Failed to abort upload: {0}',
 };
 
 const zh: Record<string, string> = {
@@ -485,6 +546,58 @@ const zh: Record<string, string> = {
   tv_empty: '暂无任务',
   tv_placeholder: '选择一个任务查看详情',
   cmd_openTaskView: '打开任务列表',
+
+  wv_editTags: '编辑标签',
+  msg_editTags: '编辑 {0} 的标签',
+  msg_editTagsPrompt: '输入标签（key=value，多个用逗号分隔，例如 env=prod,owner=alice）',
+  msg_tagsUpdated: '标签已更新',
+  msg_tagsFailed: '标签更新失败：{0}',
+  msg_infoTags: '标签',
+
+  wv_changeStorageClass: '修改存储类型',
+  msg_changeStorageClass: '修改 {0} 的存储类型',
+  msg_storageClassChanged: '存储类型已修改为 {0}',
+  msg_storageClassFailed: '存储类型修改失败：{0}',
+
+  wv_copyTo: '复制到...',
+  msg_copyDestination: '目标路径（例如 folder/new-name.txt）',
+  msg_copying: '正在复制 {0}...',
+  msg_copiedTo: '已复制到 {0}',
+  msg_copyFailed: '复制失败：{0}',
+
+  wv_downloadZip: '下载为 ZIP',
+  msg_creatingZip: '正在打包 {0}...',
+  msg_zipCreated: 'ZIP 已创建：{0}',
+  msg_zipFailed: 'ZIP 创建失败：{0}',
+
+  wv_bookmark: '收藏',
+  wv_bookmarked: '已收藏',
+  wv_unbookmark: '取消收藏',
+  msg_bookmarkAdded: '已收藏 {0}',
+  msg_bookmarkRemoved: '已取消收藏',
+  msg_bookmarks: '收藏夹',
+  msg_noBookmarks: '暂无收藏',
+
+  wv_edit: '编辑文件',
+  msg_editPreparing: '正在准备文件...',
+
+  wv_shareLink: '分享链接',
+  msg_generatingLink: '正在生成分享链接...',
+  msg_shareLinkExpiry: '链接有效期（分钟）',
+  msg_shareLink: '分享链接：{0}',
+  msg_shareLinkFailed: '链接生成失败：{0}',
+
+  wv_versions: '历史版本',
+  msg_loadingVersions: '正在加载版本列表...',
+  msg_noVersions: '暂无历史版本',
+  msg_versionRestored: '已从 {0} 恢复版本',
+  msg_versionRestoreFailed: '版本恢复失败：{0}',
+
+  wv_multipartUploads: '未完成的分片上传',
+  msg_noMultipartUploads: '没有未完成的分片上传',
+  msg_abortingUpload: '正在中止上传 {0}...',
+  msg_uploadAborted: '上传已中止',
+  msg_uploadAbortFailed: '中止上传失败：{0}',
 };
 
 type Dict = Record<string, string>;
