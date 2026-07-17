@@ -777,13 +777,16 @@ export async function copyObject(
   destBucket: string,
   destKey: string
 ): Promise<void> {
-  await client.send(new CopyObjectCommand({
+  const input: any = {
     Bucket: destBucket,
     Key: destKey,
     CopySource: `/${sourceBucket}/${sourceKey}`,
-    MetadataDirective: 'COPY',
-    TaggingDirective: 'COPY',
-  }));
+  };
+  if (!(client instanceof ObsClientWrapper)) {
+    input.MetadataDirective = 'COPY';
+    input.TaggingDirective = 'COPY';
+  }
+  await client.send(new CopyObjectCommand(input));
 }
 
 

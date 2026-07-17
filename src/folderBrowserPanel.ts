@@ -54,6 +54,7 @@ export class FolderBrowserPanel {
   private singleFileKey?: string;
   private searchPrefix?: string;
   private segments: string[] = [];
+  private pendingCopy: { key: string; connectionId: string } | undefined;
   private static folderIcon: string = '';
   private static fileIcon: string = '';
   private static extIcons: Record<string, string> = {};
@@ -567,23 +568,44 @@ export class FolderBrowserPanel {
         }
         case 'copyTo': {
           const connCP = this.connectionManager.getConnection(this.connectionId);
-          if (!connCP) return;
+          if (!connCP) break;
           const itemCP = message.item as S3ObjectInfo;
-          const destKey = await vscode.window.showInputBox({
-            title: t('msg_copyDestination'),
-            value: itemCP.key,
-            ignoreFocusOut: true,
-          });
-          if (!destKey) break;
+          this.pendingCopy = { key: itemCP.key, connectionId: this.connectionId };
+          vscode.window.showInformationMessage(t('msg_copyNavigate', itemCP.key.split('/').pop() || itemCP.key));
+          this.render();
+          break;
+        }
+        case 'pasteHere': {
+          if (!this.pendingCopy) break;
+          const connPC = this.connectionManager.getConnection(this.connectionId);
+          if (!connPC) { this.pendingCopy = undefined; this.render(); break; }
+          const srcConn = this.connectionManager.getConnection(this.pendingCopy.connectionId);
+          if (!srcConn) { this.pendingCopy = undefined; this.render(); break; }
+          const destPrefix = this.singleFileKey
+            ? this.singleFileKey.replace(/\/?[^/]+$/, '') + (this.singleFileKey.endsWith('/') ? '' : '/')
+            : this.prefix || '';
+          const destKey = destPrefix + (this.pendingCopy.key.split('/').pop() || 'file');
           try {
             await vscode.window.withProgress(
-              { location: vscode.ProgressLocation.Notification, title: t('msg_copying', itemCP.key) },
-              () => copyObject(createClient(connCP), connCP.bucket, itemCP.key, connCP.bucket, destKey)
+              { location: vscode.ProgressLocation.Notification, title: t('msg_copying', this.pendingCopy.key) },
+              () => copyObject(createClient(srcConn), srcConn.bucket, this.pendingCopy.key, connPC.bucket, destKey)
             );
             vscode.window.showInformationMessage(t('msg_copiedTo', destKey));
+            this.pendingCopy = undefined;
+            this.items = [];
+            this.nextToken = undefined;
+            await this.loadItems();
+            this.render();
           } catch (err: any) {
+            this.pendingCopy = undefined;
+            this.render();
             vscode.window.showErrorMessage(t('msg_copyFailed', err.message));
           }
+          break;
+        }
+        case 'cancelPaste': {
+          this.pendingCopy = undefined;
+          this.render();
           break;
         }
         case 'downloadZip': {
@@ -1497,6 +1519,7 @@ public async goToPath(rawPath: string): Promise<void> {
       FolderBrowserPanel.backIcon,
       this.searchMode,
       bmKeys,
+      this.pendingCopy?.key,
     );
   }
 }
@@ -1542,7 +1565,7 @@ function walkDir(dir: string): string[] {
   return result;
 }
 
-function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loading: boolean, refreshing: boolean = false, searchPattern?: string, historyRecords?: JumpRecord[], connectionId?: string, folderSvg?: string, fileSvg?: string, extIcons?: Record<string, string>, actionIcons?: Record<string, string>, backIcon?: string, searchMode?: string, bookmarkedKeys?: Set<string>): string {
+function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loading: boolean, refreshing: boolean = false, searchPattern?: string, historyRecords?: JumpRecord[], connectionId?: string, folderSvg?: string, fileSvg?: string, extIcons?: Record<string, string>, actionIcons?: Record<string, string>, backIcon?: string, searchMode?: string, bookmarkedKeys?: Set<string>, pendingCopyKey?: string): string {
   const headerRow = `<div class="list-header">
     <span></span>
     <span></span>
@@ -1741,6 +1764,18 @@ body {
   margin: 0 4px;
   flex-shrink: 0;
 }
+.paste-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  margin-bottom: 6px;
+  background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-focusBorder);
+  border-radius: 4px;
+  font-size: 13px;
+}
+.paste-bar span { flex: 1; }
 .filter-input {
   width: 100%;
   padding: 5px 8px;
@@ -1975,6 +2010,11 @@ body {
   <button class="icon-btn" id="delBatchBtn" title="${t('wv_deleteSelected')}" disabled>${iconDelete}</button>
   <div class="history-dropdown" id="historyDropdown"></div>
 </div>
+${pendingCopyKey ? `<div class="paste-bar">
+  <span>${t('msg_pasteHint', pendingCopyKey.split('/').pop() || pendingCopyKey)}</span>
+  <button class="action-btn" id="pasteBtn">${t('msg_pasteHere')}</button>
+  <button class="action-btn" id="cancelPasteBtn">${t('msg_cancel')}</button>
+</div>` : ''}
 <div class="search-mode">
   <select id="searchModeSelect">
     <option value="prefix" ${searchMode === 'prefix' ? 'selected' : ''}>${t('wv_searchPrefix')}</option>
@@ -2371,6 +2411,12 @@ document.getElementById('taskViewBtn')?.addEventListener('click', () => {
 });
 document.getElementById('bookmarkBtn')?.addEventListener('click', () => {
   vscodeApi.postMessage({ type: 'showBookmarks' });
+});
+document.getElementById('pasteBtn')?.addEventListener('click', () => {
+  vscodeApi.postMessage({ type: 'pasteHere' });
+});
+document.getElementById('cancelPasteBtn')?.addEventListener('click', () => {
+  vscodeApi.postMessage({ type: 'cancelPaste' });
 });
 const filterInput = document.getElementById('filterInput');
 const searchModeSelect = document.getElementById('searchModeSelect');

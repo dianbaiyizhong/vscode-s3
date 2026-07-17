@@ -263,7 +263,10 @@ const en: Record<string, string> = {
 
   // copy
   wv_copyTo: 'Copy to...',
-  msg_copyDestination: 'Destination key (e.g. folder/new-name.txt)',
+  msg_copyNavigate: 'Navigate to destination and click "Paste Here"',
+  msg_pasteHint: 'Paste: {0}',
+  msg_pasteHere: 'Paste Here',
+  msg_cancel: 'Cancel',
   msg_copying: 'Copying {0}...',
   msg_copiedTo: 'Copied to {0}',
   msg_copyFailed: 'Failed to copy: {0}',
@@ -549,7 +552,10 @@ const zh: Record<string, string> = {
   msg_storageClassFailed: '存储类型修改失败：{0}',
 
   wv_copyTo: '复制到...',
-  msg_copyDestination: '目标路径（例如 folder/new-name.txt）',
+  msg_copyNavigate: '请导航到目标目录，点击「粘贴到此」',
+  msg_pasteHint: '粘贴：{0}',
+  msg_pasteHere: '粘贴到此',
+  msg_cancel: '取消',
   msg_copying: '正在复制 {0}...',
   msg_copiedTo: '已复制到 {0}',
   msg_copyFailed: '复制失败：{0}',
