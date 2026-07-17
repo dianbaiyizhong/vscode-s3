@@ -283,10 +283,6 @@ const en: Record<string, string> = {
   msg_bookmarks: 'Bookmarks',
   msg_noBookmarks: 'No bookmarks',
 
-  // quick edit
-  wv_edit: 'Edit File',
-  msg_editPreparing: 'Preparing file for editing...',
-
   // pre-signed URL
   wv_shareLink: 'Share Link',
   msg_generatingLink: 'Generating share link...',
@@ -300,13 +296,6 @@ const en: Record<string, string> = {
   msg_noVersions: 'No previous versions',
   msg_versionRestored: 'Restored version from {0}',
   msg_versionRestoreFailed: 'Failed to restore version: {0}',
-
-  // multipart uploads
-  wv_multipartUploads: 'Incomplete Multipart Uploads',
-  msg_noMultipartUploads: 'No incomplete multipart uploads',
-  msg_abortingUpload: 'Aborting upload {0}...',
-  msg_uploadAborted: 'Upload aborted',
-  msg_uploadAbortFailed: 'Failed to abort upload: {0}',
 };
 
 const zh: Record<string, string> = {
@@ -578,9 +567,6 @@ const zh: Record<string, string> = {
   msg_bookmarks: '收藏夹',
   msg_noBookmarks: '暂无收藏',
 
-  wv_edit: '编辑文件',
-  msg_editPreparing: '正在准备文件...',
-
   wv_shareLink: '分享链接',
   msg_generatingLink: '正在生成分享链接...',
   msg_shareLinkExpiry: '链接有效期（分钟）',
@@ -592,12 +578,6 @@ const zh: Record<string, string> = {
   msg_noVersions: '暂无历史版本',
   msg_versionRestored: '已从 {0} 恢复版本',
   msg_versionRestoreFailed: '版本恢复失败：{0}',
-
-  wv_multipartUploads: '未完成的分片上传',
-  msg_noMultipartUploads: '没有未完成的分片上传',
-  msg_abortingUpload: '正在中止上传 {0}...',
-  msg_uploadAborted: '上传已中止',
-  msg_uploadAbortFailed: '中止上传失败：{0}',
 };
 
 type Dict = Record<string, string>;

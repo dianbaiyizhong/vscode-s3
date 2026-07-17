@@ -3,7 +3,7 @@ import * as os from "os";
 import * as path from 'path';
 import * as fs from 'fs';
 import * as stream from 'stream';
-import { createClient, listObjects, uploadFile, downloadFile, downloadFolder, deleteObject, deleteFolder, renameObject, renameFolder, createFolder, putObjectTags, changeStorageClass, copyObject, listMultipartUploads, abortMultipartUpload, S3ObjectInfo, ProgressFn, ObjectDetail } from './s3Client';
+import { createClient, listObjects, uploadFile, downloadFile, downloadFolder, deleteObject, deleteFolder, renameObject, renameFolder, createFolder, putObjectTags, changeStorageClass, copyObject, S3ObjectInfo, ProgressFn, ObjectDetail } from './s3Client';
 import { taskManager } from './taskManager';
 import { TaskViewPanel } from './taskViewPanel';
 import { ConnectionManager } from './connectionManager';
@@ -406,7 +406,7 @@ export class FolderBrowserPanel {
         }
         case 'showBookmarks': {
           if (!this.jumpHistory) break;
-          const bms = this.jumpHistory.getBookmarks();
+          const bms = this.jumpHistory.getBookmarks().filter(b => b.connectionId === this.connectionId);
           if (bms.length === 0) {
             vscode.window.showInformationMessage(t('msg_noBookmarks'));
             break;
@@ -728,65 +728,6 @@ export class FolderBrowserPanel {
             }
           } catch (err: any) {
             vscode.window.showErrorMessage(t('msg_versionRestoreFailed', err.message));
-          }
-          break;
-        }
-        case 'multipartUploads': {
-          const connMU = this.connectionManager.getConnection(this.connectionId);
-          if (!connMU) break;
-          try {
-            const clientMU = createClient(connMU);
-            const uploads = await vscode.window.withProgress(
-              { location: vscode.ProgressLocation.Notification, title: 'Listing multipart uploads...' },
-              () => listMultipartUploads(clientMU, connMU.bucket, this.searchPrefix || this.prefix)
-            );
-            if (uploads.length === 0) {
-              vscode.window.showInformationMessage(t('msg_noMultipartUploads'));
-              break;
-            }
-            const picks = uploads.map(u => ({
-              label: u.key,
-              description: `Initiated: ${u.initiated?.toLocaleString()}`,
-              detail: `Upload ID: ${u.uploadId.substring(0, 20)}...`,
-              uploadId: u.uploadId,
-              key: u.key,
-            }));
-            const pick = await vscode.window.showQuickPick(picks, {
-              title: t('wv_multipartUploads'),
-              matchOnDescription: true,
-            });
-            if (!pick) break;
-            const confirm = await vscode.window.showQuickPick(
-              [{ label: 'Abort Upload', description: 'This cannot be undone' }, { label: 'Cancel' }],
-              { title: t('msg_abortingUpload', pick.key) }
-            );
-            if (!confirm || confirm.label === 'Cancel') break;
-            await abortMultipartUpload(clientMU, connMU.bucket, pick.key, pick.uploadId);
-            vscode.window.showInformationMessage(t('msg_uploadAborted'));
-          } catch (err: any) {
-            vscode.window.showErrorMessage(t('msg_uploadAbortFailed', err.message));
-          }
-          break;
-        }
-        case 'editFile': {
-          const connEF = this.connectionManager.getConnection(this.connectionId);
-          if (!connEF) break;
-          const itemEF = message.item as S3ObjectInfo;
-          if (itemEF.isFolder) break;
-          const { PreviewManager } = await import('./previewManager');
-          const previewMan = new PreviewManager();
-          const tempPath = previewMan.getTempPath(this.connectionId, itemEF.key);
-          previewMan.ensureParentDir(tempPath);
-          try {
-            await vscode.window.withProgress(
-              { location: vscode.ProgressLocation.Window, title: t('msg_editPreparing') },
-              () => downloadFile(createClient(connEF), connEF.bucket, itemEF.key, tempPath)
-            );
-            previewMan.registerMapping(tempPath, this.connectionId, connEF.bucket, itemEF.key);
-            const doc = await vscode.workspace.openTextDocument(tempPath);
-            await vscode.window.showTextDocument(doc, { preview: false });
-          } catch (err: any) {
-            vscode.window.showErrorMessage(err.message);
           }
           break;
         }
@@ -1534,6 +1475,12 @@ public async goToPath(rawPath: string): Promise<void> {
     const displayPath = this.singleFileKey || this.prefix || '/';
     this.panel.title = `${this.searchPrefix ? '🔍 ' + this.searchPrefix : displayPath} — ${this.connectionName}`;
     const records = this.getHistoryRecords?.() || [];
+    const bmKeys = new Set<string>();
+    if (this.jumpHistory) {
+      for (const bm of this.jumpHistory.getBookmarks()) {
+        if (bm.connectionId === this.connectionId) bmKeys.add(bm.key);
+      }
+    }
     this.panel.webview.html = getHtml(
       displayPath,
       this.items,
@@ -1549,6 +1496,7 @@ public async goToPath(rawPath: string): Promise<void> {
       FolderBrowserPanel.actionIcons,
       FolderBrowserPanel.backIcon,
       this.searchMode,
+      bmKeys,
     );
   }
 }
@@ -1594,7 +1542,7 @@ function walkDir(dir: string): string[] {
   return result;
 }
 
-function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loading: boolean, refreshing: boolean = false, searchPattern?: string, historyRecords?: JumpRecord[], connectionId?: string, folderSvg?: string, fileSvg?: string, extIcons?: Record<string, string>, actionIcons?: Record<string, string>, backIcon?: string, searchMode?: string): string {
+function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loading: boolean, refreshing: boolean = false, searchPattern?: string, historyRecords?: JumpRecord[], connectionId?: string, folderSvg?: string, fileSvg?: string, extIcons?: Record<string, string>, actionIcons?: Record<string, string>, backIcon?: string, searchMode?: string, bookmarkedKeys?: Set<string>): string {
   const headerRow = `<div class="list-header">
     <span></span>
     <span></span>
@@ -1621,7 +1569,8 @@ function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loadin
   const folderRows = items.filter(i => i.isFolder).map(i => {
     const name = i.key.replace(/\/$/, '').split('/').pop() || '';
     const data = JSON.stringify(i).replace(/"/g, '&quot;');
-    return `<div class="item folder" data-item="${data}">
+    const bm = bookmarkedKeys?.has(i.key) ? ' data-bookmarked="1"' : '';
+    return `<div class="item folder" data-item="${data}"${bm}>
       <input type="checkbox" class="item-cb">
       <span class="item-icon">${folderIconSvg}</span>
       <span class="item-name">${escapeHtml(name)}</span>
@@ -1643,7 +1592,8 @@ function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loadin
     const ext = name.includes('.') ? name.split('.').pop()!.toLowerCase() : '';
     const icon = ext && extIcons && extIcons[ext] ? extIcons[ext] : fileIconSvg;
     const data = JSON.stringify(i).replace(/"/g, '&quot;');
-    return `<div class="item file" data-item="${data}">
+    const bm = bookmarkedKeys?.has(i.key) ? ' data-bookmarked="1"' : '';
+    return `<div class="item file" data-item="${data}"${bm}>
       <input type="checkbox" class="item-cb">
       <span class="item-icon">${icon}</span>
       <span class="item-name">${escapeHtml(name)}</span>
@@ -2066,11 +2016,11 @@ const vscodeApi = acquireVsCodeApi();
     changeStorageClass: t('wv_changeStorageClass'),
     copyTo: t('wv_copyTo'),
     shareLink: t('wv_shareLink'),
-    edit: t('wv_edit'),
     versions: t('wv_versions'),
     downloadZip: t('wv_downloadZip'),
-    multipartUploads: t('wv_multipartUploads'),
     bookmark: t('wv_bookmark'),
+    bookmarked: t('wv_bookmarked'),
+    unbookmark: t('wv_unbookmark'),
     bookmarks: t('msg_bookmarks'),
     noBookmarks: t('msg_noBookmarks'),
   })};
@@ -2211,10 +2161,10 @@ document.addEventListener('contextmenu', e => {
     ctxMenu.appendChild(div);
   };
   const ai = actionIcons2 || {};
+  const isBm = itemEl.dataset.bookmarked === '1';
   addItem(ai['info'] || '&#x2139;', l10n.info, 'info');
   addItem(ai['download'] || '&#x2B07;', l10n.download, 'download');
   addItem(ai['rename'] || '&#x270F;', l10n.rename, 'rename');
-  if (isFile) addItem(ai['download'] || '&#x2B07;', l10n.download, 'download');
   addItem(ai['delete'] || '&#x1F5D1;', l10n.delete, 'delete');
   addItem(ai['copypath'] || '&#x1F4CB;', l10n.copyPath, 'copyPath');
   addItem(ai['copyfilename'] || '&#x1F4CB;', l10n.copyFileName, 'copyFileName');
@@ -2223,17 +2173,20 @@ document.addEventListener('contextmenu', e => {
   addItem(ai['changestorageclass'] || '&#x1F504;', l10n.changeStorageClass, 'changeStorageClass');
   addItem(ai['copyto'] || '&#x1F4C4;', l10n.copyTo, 'copyTo');
   if (isFile) addItem(ai['sharelink'] || '&#x1F517;', l10n.shareLink, 'shareLink');
-  if (isFile) addItem(ai['editfile'] || '&#x1F4DD;', l10n.edit, 'editFile');
   if (isFile) addItem(ai['versions'] || '&#x1F4C2;', l10n.versions, 'versions');
   if (item.isFolder) {
     addItem(ai['downloadzip'] || '&#x1F4E6;', l10n.downloadZip, 'downloadZip');
   }
-  addItem(ai['multipartuploads'] || '&#x1F4CB;', l10n.multipartUploads, 'multipartUploads');
   addSep();
-  addItem(ai['bookmark'] || '&#x2B50;', l10n.bookmark, 'toggleBookmark');
+  addItem(ai['bookmark'] || '&#x2B50;', isBm ? l10n.unbookmark : l10n.bookmark, 'toggleBookmark');
   ctxMenu.style.left = e.clientX + 'px';
   ctxMenu.style.top = e.clientY + 'px';
   ctxMenu.classList.add('show');
+  // Flip up if menu overflows viewport bottom
+  const rect = ctxMenu.getBoundingClientRect();
+  if (rect.bottom > window.innerHeight) {
+    ctxMenu.style.top = Math.max(0, e.clientY - rect.height) + 'px';
+  }
 });
 
 document.addEventListener('click', e => {

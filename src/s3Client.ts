@@ -14,8 +14,6 @@ import {
   DeleteObjectCommand,
   DeleteObjectsCommand,
   ObjectIdentifier,
-  ListMultipartUploadsCommand,
-  AbortMultipartUploadCommand,
 } from '@aws-sdk/client-s3';
 import { S3Connection } from './connectionManager';
 import { HttpProxyAgent } from 'http-proxy-agent';
@@ -788,34 +786,7 @@ export async function copyObject(
   }));
 }
 
-export async function listMultipartUploads(
-  client: IObjectClient,
-  bucket: string,
-  prefix?: string
-): Promise<{ uploadId: string; key: string; initiated: Date; }[]> {
-  const result = await client.send(new ListMultipartUploadsCommand({
-    Bucket: bucket,
-    Prefix: prefix,
-  }));
-  return (result.Uploads || []).map((u: any) => ({
-    uploadId: u.UploadId!,
-    key: u.Key!,
-    initiated: u.Initiated!,
-  }));
-}
 
-export async function abortMultipartUpload(
-  client: IObjectClient,
-  bucket: string,
-  key: string,
-  uploadId: string
-): Promise<void> {
-  await client.send(new AbortMultipartUploadCommand({
-    Bucket: bucket,
-    Key: key,
-    UploadId: uploadId,
-  }));
-}
 
 export interface BucketInfo {
   totalObjects: number;
