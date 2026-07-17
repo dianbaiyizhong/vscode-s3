@@ -293,12 +293,6 @@ const en: Record<string, string> = {
   msg_shareLink: 'Share Link: {0}',
   msg_shareLinkFailed: 'Failed to generate link: {0}',
 
-  // version
-  wv_versions: 'Versions',
-  msg_loadingVersions: 'Loading versions...',
-  msg_noVersions: 'No previous versions',
-  msg_versionRestored: 'Restored version from {0}',
-  msg_versionRestoreFailed: 'Failed to restore version: {0}',
 };
 
 const zh: Record<string, string> = {
@@ -579,11 +573,6 @@ const zh: Record<string, string> = {
   msg_shareLink: '分享链接：{0}',
   msg_shareLinkFailed: '链接生成失败：{0}',
 
-  wv_versions: '历史版本',
-  msg_loadingVersions: '正在加载版本列表...',
-  msg_noVersions: '暂无历史版本',
-  msg_versionRestored: '已从 {0} 恢复版本',
-  msg_versionRestoreFailed: '版本恢复失败：{0}',
 };
 
 type Dict = Record<string, string>;

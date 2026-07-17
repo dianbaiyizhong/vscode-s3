@@ -671,85 +671,33 @@ export class FolderBrowserPanel {
           });
           if (!expiry) break;
           try {
-            const { GetObjectCommand } = await import('@aws-sdk/client-s3');
-            const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
-            const client = createClient(connSL);
-            const url = await vscode.window.withProgress(
-              { location: vscode.ProgressLocation.Notification, title: t('msg_generatingLink') },
-              () => getSignedUrl(client as any, new GetObjectCommand({ Bucket: connSL.bucket, Key: itemSL.key }), { expiresIn: Number(expiry) * 60 })
-            );
+            let url: string;
+            if (connSL.isHuaweiOBS) {
+              const ObsClient = require('esdk-obs-nodejs');
+              const obs = new ObsClient({
+                access_key_id: connSL.accessKeyId,
+                secret_access_key: connSL.secretAccessKey,
+                server: connSL.endpoint,
+                ...(connSL.region ? { region: connSL.region } : {}),
+                ...(connSL.forcePathStyle ? { path_style: true } : {}),
+              });
+              const res = obs.createSignedUrlSync({
+                Method: 'GET',
+                Bucket: connSL.bucket,
+                Key: itemSL.key,
+                Expires: Number(expiry) * 60,
+              });
+              url = res.SignedUrl;
+            } else {
+              const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+              const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+              const client = createClient(connSL);
+              url = await getSignedUrl(client as any, new GetObjectCommand({ Bucket: connSL.bucket, Key: itemSL.key }), { expiresIn: Number(expiry) * 60 });
+            }
             vscode.env.clipboard.writeText(url);
             vscode.window.showInformationMessage(t('msg_shareLink', url));
           } catch (err: any) {
             vscode.window.showErrorMessage(t('msg_shareLinkFailed', err.message));
-          }
-          break;
-        }
-        case 'versions': {
-          const connVer = this.connectionManager.getConnection(this.connectionId);
-          if (!connVer) break;
-          const itemVer = message.item as S3ObjectInfo;
-          try {
-            const { ListObjectVersionsCommand } = await import('@aws-sdk/client-s3');
-            const client = createClient(connVer);
-            const result = await vscode.window.withProgress(
-              { location: vscode.ProgressLocation.Notification, title: t('msg_loadingVersions') },
-              () => client.send(new ListObjectVersionsCommand({ Bucket: connVer.bucket, Prefix: itemVer.key }))
-            );
-            const versions = (result.Versions || []).filter((v: any) => v.Key === itemVer.key);
-            const deleteMarkers = (result.DeleteMarkers || []).filter((v: any) => v.Key === itemVer.key);
-            if (versions.length === 0 && deleteMarkers.length === 0) {
-              vscode.window.showInformationMessage(t('msg_noVersions'));
-              break;
-            }
-            const picks = [
-              ...versions.map((v: any) => ({
-                label: `${v.IsLatest ? '✓ ' : ''}${v.VersionId}`,
-                description: `${t('msg_infoLastModified')}: ${v.LastModified?.toLocaleString()}`,
-                detail: `${t('msg_infoSize')}: ${formatSize(v.Size)} | ${t('msg_infoStorageClass')}: ${v.StorageClass || 'STANDARD'}`,
-                versionId: v.VersionId,
-                isDeleteMarker: false,
-              })),
-              ...deleteMarkers.map((v: any) => ({
-                label: `${v.IsLatest ? '✓ ' : ''}${v.VersionId} (Delete Marker)`,
-                description: `${t('msg_infoLastModified')}: ${v.LastModified?.toLocaleString()}`,
-                detail: '',
-                versionId: v.VersionId,
-                isDeleteMarker: true,
-              })),
-            ];
-            const pick = await vscode.window.showQuickPick(picks, {
-              title: t('wv_versions') + ' - ' + itemVer.key,
-              matchOnDescription: true,
-              matchOnDetail: true,
-            });
-            if (!pick || pick.isDeleteMarker) break;
-            const action = await vscode.window.showQuickPick(
-              [{ label: 'Download this version' }, { label: 'Restore this version (copy to current)' }],
-              { title: `Version ${pick.versionId}` }
-            );
-            if (!action) break;
-            if (action.label.startsWith('Download')) {
-              const uri = await vscode.window.showSaveDialog({ defaultUri: vscode.Uri.file(itemVer.key.split('/').pop() || 'file') });
-              if (!uri) break;
-              const body = await client.send(new (await import('@aws-sdk/client-s3')).GetObjectCommand({
-                Bucket: connVer.bucket, Key: itemVer.key, VersionId: pick.versionId,
-              }));
-              const chunks: Buffer[] = [];
-              for await (const chunk of (body.Body || new Uint8Array()) as any) {
-                chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-              }
-              fs.writeFileSync(uri.fsPath, Buffer.concat(chunks));
-              vscode.window.showInformationMessage(t('msg_copiedTo', uri.fsPath));
-            } else {
-              await client.send(new (await import('@aws-sdk/client-s3')).CopyObjectCommand({
-                Bucket: connVer.bucket, Key: itemVer.key,
-                CopySource: `/${connVer.bucket}/${itemVer.key}?versionId=${pick.versionId}`,
-              }));
-              vscode.window.showInformationMessage(t('msg_versionRestored', pick.versionId));
-            }
-          } catch (err: any) {
-            vscode.window.showErrorMessage(t('msg_versionRestoreFailed', err.message));
           }
           break;
         }
@@ -2056,7 +2004,6 @@ const vscodeApi = acquireVsCodeApi();
     changeStorageClass: t('wv_changeStorageClass'),
     copyTo: t('wv_copyTo'),
     shareLink: t('wv_shareLink'),
-    versions: t('wv_versions'),
     downloadZip: t('wv_downloadZip'),
     bookmark: t('wv_bookmark'),
     bookmarked: t('wv_bookmarked'),
@@ -2213,7 +2160,6 @@ document.addEventListener('contextmenu', e => {
   addItem(ai['changestorageclass'] || '&#x1F504;', l10n.changeStorageClass, 'changeStorageClass');
   addItem(ai['copyto'] || '&#x1F4C4;', l10n.copyTo, 'copyTo');
   if (isFile) addItem(ai['sharelink'] || '&#x1F517;', l10n.shareLink, 'shareLink');
-  if (isFile) addItem(ai['versions'] || '&#x1F4C2;', l10n.versions, 'versions');
   if (item.isFolder) {
     addItem(ai['downloadzip'] || '&#x1F4E6;', l10n.downloadZip, 'downloadZip');
   }
