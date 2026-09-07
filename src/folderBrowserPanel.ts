@@ -1231,6 +1231,7 @@ export class FolderBrowserPanel {
 
 public async goToPath(rawPath: string): Promise<void> {
     this.searchPattern = undefined;
+    this.searchPrefix = undefined;
     const conn = this.connectionManager.getConnection(this.connectionId);
     if (!conn) return;
     if (!rawPath) return;
