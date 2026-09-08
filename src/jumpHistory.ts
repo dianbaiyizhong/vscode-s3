@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 
-const MAX_RECORDS = 50;
+const MAX_STORED_RECORDS = 1000;
 const STORAGE_KEY = 'jumpHistory';
 
 export interface JumpRecord {
@@ -44,8 +44,8 @@ export class JumpHistory {
       this.records.splice(existing, 1);
     }
     this.records.unshift({ connectionId, key, label, connectionName, timestamp: Date.now() });
-    if (this.records.length > MAX_RECORDS) {
-      this.records = this.records.slice(0, MAX_RECORDS);
+    if (this.records.length > MAX_STORED_RECORDS) {
+      this.records = this.records.slice(0, MAX_STORED_RECORDS);
     }
     this.save();
   }

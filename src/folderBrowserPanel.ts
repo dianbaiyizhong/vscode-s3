@@ -2431,9 +2431,11 @@ function renderDropdown(results) {
   if (el) el.scrollIntoView({ block: 'nearest' });
 }
 
+const MAX_DISPLAY_RECORDS = 50;
+
 function filterHistory(query) {
   const q = query.toLowerCase();
-  return dedupedRecords.filter(r => r.connectionId === currentConnectionId && r.key.toLowerCase().includes(q));
+  return dedupedRecords.filter(r => r.connectionId === currentConnectionId && r.key.toLowerCase().includes(q)).slice(0, MAX_DISPLAY_RECORDS);
 }
 
 function selectHistoryItem(idx) {
