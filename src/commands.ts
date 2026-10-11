@@ -47,7 +47,25 @@ export function registerCommands(
     ),
     vscode.commands.registerCommand('s3.openTaskView', () =>
       TaskViewPanel.createOrShow()
-    )
+    ),
+    vscode.window.registerWebviewPanelSerializer('folderBrowser', {
+      async deserializeWebviewPanel(webviewPanel, state) {
+        const restored = FolderBrowserPanel.deserialize(
+          connManager,
+          webviewPanel,
+          state,
+          (id, prefix) => {
+            const conn = connManager.getConnection(id);
+            jumpHistory.addRecord(id, prefix, getLabel(prefix, true), conn?.name || '');
+          },
+          () => jumpHistory.getRecords(),
+          jumpHistory
+        );
+        if (!restored) {
+          try { webviewPanel.dispose(); } catch { /* already disposed */ }
+        }
+      }
+    })
   );
 }
 

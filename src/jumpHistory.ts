@@ -65,6 +65,14 @@ export class JumpHistory {
     return this.records.some(r => r.connectionId === connectionId && r.key === key && r.bookmarked);
   }
 
+  removeBookmark(connectionId: string, key: string): void {
+    const record = this.records.find(r => r.connectionId === connectionId && r.key === key);
+    if (record && record.bookmarked) {
+      record.bookmarked = false;
+      this.saveBookmarks();
+    }
+  }
+
   getBookmarks(): JumpRecord[] {
     return this.records.filter(r => r.bookmarked).sort((a, b) => b.timestamp - a.timestamp);
   }

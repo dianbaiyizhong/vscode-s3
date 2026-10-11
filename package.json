@@ -13,6 +13,8 @@
   ],
   "activationEvents": [
     "onView:s3Explorer",
+    "onWebviewPanel:folderBrowser",
+    "onWebviewPanel:s3TaskView",
     "onCommand:s3.addConnection",
     "onCommand:s3.editConnection",
     "onCommand:s3.openSettings",

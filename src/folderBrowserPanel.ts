@@ -40,6 +40,67 @@ export class FolderBrowserPanel {
     return new FolderBrowserPanel(column, connectionManager, connectionId, prefix, label, onNavigate, getHistoryRecords, skipInitialLoad, jumpHistory);
   }
 
+  /**
+   * Restore a folder browser tab after VS Code restart.
+   * Returns true when the panel was restored; false when the state is invalid
+   * (e.g. the connection no longer exists) and the caller should dispose the panel.
+   */
+  public static deserialize(
+    connectionManager: ConnectionManager,
+    panel: vscode.WebviewPanel,
+    state: unknown,
+    onNavigate: (connectionId: string, prefix: string) => void,
+    getHistoryRecords?: () => JumpRecord[],
+    jumpHistory?: JumpHistory,
+  ): boolean {
+    interface RestoredLocation {
+      connectionId?: string;
+      prefix?: string;
+      searchPrefix?: string | null;
+      searchPattern?: string | null;
+      searchMode?: string | null;
+      singleFileKey?: string | null;
+    }
+    const loc = (state as { location?: RestoredLocation } | undefined)?.location;
+    if (!loc || typeof loc.connectionId !== 'string' || !loc.connectionId) return false;
+    const conn = connectionManager.getConnection(loc.connectionId);
+    if (!conn) return false;
+
+    const inst = new FolderBrowserPanel(
+      vscode.ViewColumn.One,
+      connectionManager,
+      loc.connectionId,
+      loc.prefix || '',
+      conn.name,
+      onNavigate,
+      getHistoryRecords,
+      true,
+      jumpHistory,
+      panel,
+    );
+
+    if (typeof loc.singleFileKey === 'string' && loc.singleFileKey) {
+      void inst.goToPath(loc.singleFileKey);
+    } else if (typeof loc.searchPattern === 'string' && loc.searchPattern) {
+      inst.searchPattern = loc.searchPattern;
+      inst.searchMode = typeof loc.searchMode === 'string' && loc.searchMode ? loc.searchMode : 'prefix';
+      inst.searchPrefix = typeof loc.searchPrefix === 'string' ? loc.searchPrefix : undefined;
+      void (async () => {
+        if (inst.searchMode === 'prefix') {
+          await inst['loadAllSearchPages']();
+        } else if (inst.searchMode === 'exact') {
+          await inst['loadAllExactSearchPages']();
+        } else {
+          await inst['loadAllFuzzySearchPages']();
+        }
+        inst['render']();
+      })();
+    } else {
+      void inst['loadItems']().then(() => inst['render']());
+    }
+    return true;
+  }
+
   private panel: vscode.WebviewPanel;
   private connectionId: string;
   private prefix: string;
@@ -71,6 +132,7 @@ export class FolderBrowserPanel {
     getHistoryRecords?: () => JumpRecord[],
     skipInitialLoad = false,
     private jumpHistory?: JumpHistory,
+    existingPanel?: vscode.WebviewPanel,
   ) {
     this.connectionId = connectionId;
     this.prefix = prefix;
@@ -103,7 +165,7 @@ export class FolderBrowserPanel {
     }
 
     const initPath = (prefix || '/').length > 15 ? '…' + (prefix || '/').slice(-15) : (prefix || '/');
-    this.panel = vscode.window.createWebviewPanel(
+    this.panel = existingPanel ?? vscode.window.createWebviewPanel(
       'folderBrowser',
       `${prefix || '/'} — ${this.connectionName}`,
       column,
@@ -407,21 +469,45 @@ export class FolderBrowserPanel {
         }
         case 'showBookmarks': {
           if (!this.jumpHistory) break;
-          const bms = this.jumpHistory.getBookmarks().filter(b => b.connectionId === this.connectionId);
+          const jumpHistory = this.jumpHistory;
+          const bms = jumpHistory.getBookmarks().filter(b => b.connectionId === this.connectionId);
           if (bms.length === 0) {
             vscode.window.showInformationMessage(t('msg_noBookmarks'));
             break;
           }
-          const picks = bms.map(b => ({
+          interface BookmarkPick extends vscode.QuickPickItem {
+            connectionId: string;
+            key: string;
+          }
+          const picks: BookmarkPick[] = bms.map(b => ({
             label: b.label || b.key.split('/').filter(Boolean).pop() || b.key,
             description: b.key,
             detail: b.connectionName,
             connectionId: b.connectionId,
             key: b.key,
+            buttons: [{ iconPath: new vscode.ThemeIcon('trash'), tooltip: t('wv_unbookmark') }],
           }));
-          const pick = await vscode.window.showQuickPick(picks, {
-            title: t('msg_bookmarks'),
-            matchOnDescription: true,
+          const qp = vscode.window.createQuickPick<BookmarkPick>();
+          qp.title = t('msg_bookmarks');
+          qp.matchOnDescription = true;
+          qp.items = picks;
+          qp.onDidHide(() => qp.dispose());
+          // Clicking the trash button removes the bookmark without navigating
+          qp.onDidTriggerItemButton(e => {
+            jumpHistory.removeBookmark(e.item.connectionId, e.item.key);
+            vscode.window.showInformationMessage(t('msg_bookmarkRemoved'));
+            qp.items = qp.items.filter(i => i !== e.item);
+            this.render();
+            if (qp.items.length === 0) qp.hide();
+          });
+          // Clicking an item navigates; resolve before hide to win the race with onDidHide
+          qp.show();
+          const pick = await new Promise<BookmarkPick | undefined>(resolve => {
+            qp.onDidChangeSelection(sel => {
+              resolve(sel[0]);
+              qp.hide();
+            });
+            qp.onDidHide(() => resolve(undefined));
           });
           if (!pick) break;
           const bmConn = this.connectionManager.getConnection(pick.connectionId);
@@ -430,11 +516,15 @@ export class FolderBrowserPanel {
             break;
           }
           const segments = pick.key.replace(/\/$/, '').split('/');
-          const bmPrefix = pick.key.endsWith('/') || segments.length <= 1 ? '' : segments.slice(0, -1).join('/') + '/';
+          const isFile = !pick.key.endsWith('/') && segments.length > 0;
+          // Folder bookmark -> its own key; file bookmark -> its parent folder.
+          // A top-level file has no parent prefix; '/' means bucket root.
+          const bmPrefix = !isFile
+            ? (pick.key === '/' ? '' : pick.key)
+            : (segments.length > 1 ? segments.slice(0, -1).join('/') + '/' : '');
           this.connectionId = pick.connectionId;
           this.prefix = bmPrefix;
           this.segments = bmPrefix ? bmPrefix.replace(/\/$/, '').split('/').filter(Boolean) : [];
-          const isFile = !pick.key.endsWith('/') && segments.length > 0;
           this.singleFileKey = isFile ? pick.key : undefined;
           this.searchPattern = undefined;
           this.searchPrefix = undefined;
@@ -1469,6 +1559,14 @@ public async goToPath(rawPath: string): Promise<void> {
       this.searchMode,
       bmKeys,
       this.pendingCopy?.key,
+      {
+        connectionId: this.connectionId,
+        prefix: this.prefix,
+        searchPrefix: this.searchPrefix ?? null,
+        searchPattern: this.searchPattern ?? null,
+        searchMode: this.searchPattern ? this.searchMode : null,
+        singleFileKey: this.singleFileKey ?? null,
+      },
     );
   }
 }
@@ -1514,7 +1612,7 @@ function walkDir(dir: string): string[] {
   return result;
 }
 
-function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loading: boolean, refreshing: boolean = false, searchPattern?: string, historyRecords?: JumpRecord[], connectionId?: string, folderSvg?: string, fileSvg?: string, extIcons?: Record<string, string>, actionIcons?: Record<string, string>, backIcon?: string, searchMode?: string, bookmarkedKeys?: Set<string>, pendingCopyKey?: string): string {
+function getHtml(prefix: string, items: S3ObjectInfo[], hasMore: boolean, loading: boolean, refreshing: boolean = false, searchPattern?: string, historyRecords?: JumpRecord[], connectionId?: string, folderSvg?: string, fileSvg?: string, extIcons?: Record<string, string>, actionIcons?: Record<string, string>, backIcon?: string, searchMode?: string, bookmarkedKeys?: Set<string>, pendingCopyKey?: string, location?: { connectionId?: string; prefix?: string; searchPrefix?: string | null; searchPattern?: string | null; searchMode?: string | null; singleFileKey?: string | null }): string {
   const headerRow = `<div class="list-header">
     <span></span>
     <span></span>
@@ -1982,6 +2080,9 @@ ${loadMoreBtn}
 <div class="cm" id="ctxMenu"></div>
 <script>
 const vscodeApi = acquireVsCodeApi();
+  try {
+    vscodeApi.setState({ ...(vscodeApi.getState() || {}), location: ${JSON.stringify(location || null)} });
+  } catch (e) { /* state not critical */ }
   (() => {
     const pos = sessionStorage.getItem('scrollPos');
     if (pos) {
