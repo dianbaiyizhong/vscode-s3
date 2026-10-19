@@ -286,6 +286,17 @@ const en: Record<string, string> = {
   msg_bookmarks: 'Bookmarks',
   msg_noBookmarks: 'No bookmarks',
 
+  // import/export connections
+  'cmd.exportConnections': 'Export Connections',
+  'cmd.importConnections': 'Import Connections',
+  msg_noConnectionsToExport: 'No connections to export',
+  msg_exportSuccess: 'Exported {0} connection(s)',
+  msg_exportFailed: 'Export failed: {0}',
+  msg_importSuccess: 'Imported {0} connection(s), skipped {1} invalid',
+  msg_importInvalidFile: 'Invalid connections file',
+  msg_importFailed: 'Import failed: {0}',
+  msg_connectionNameExists: 'A connection named "{0}" already exists',
+
   // pre-signed URL
   wv_shareLink: 'Share Link',
   msg_generatingLink: 'Generating share link...',
@@ -566,6 +577,16 @@ const zh: Record<string, string> = {
   msg_bookmarkRemoved: '已取消收藏',
   msg_bookmarks: '收藏夹',
   msg_noBookmarks: '暂无收藏',
+
+  'cmd.exportConnections': '导出连接',
+  'cmd.importConnections': '导入连接',
+  msg_noConnectionsToExport: '没有可导出的连接',
+  msg_exportSuccess: '已导出 {0} 个连接',
+  msg_exportFailed: '导出失败：{0}',
+  msg_importSuccess: '已导入 {0} 个连接，跳过 {1} 个无效项',
+  msg_importInvalidFile: '无效的连接文件',
+  msg_importFailed: '导入失败：{0}',
+  msg_connectionNameExists: '已存在同名连接"{0}"',
 
   wv_shareLink: '分享链接',
   msg_generatingLink: '正在生成分享链接...',

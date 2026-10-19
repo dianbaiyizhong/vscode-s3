@@ -6,24 +6,33 @@ export class TaskViewPanel {
   public static currentPanel: TaskViewPanel | undefined;
   private readonly _panel: vscode.WebviewPanel;
   private readonly _disposables: vscode.Disposable[] = [];
+  private readonly _connectionId: string;
+  private readonly _connectionName: string;
 
-  static createOrShow(): void {
+  /**
+   * One task list per connection: the panel only shows tasks created
+   * under the given connection.
+   */
+  static createOrShow(connectionId: string, connectionName?: string): void {
     if (TaskViewPanel.currentPanel) {
       // Always recreate — fresh panel guarantees content renders
       TaskViewPanel.currentPanel.dispose();
     }
+    const title = connectionName ? `${_t('tv_title')} — ${connectionName}` : _t('tv_title');
     const panel = vscode.window.createWebviewPanel(
       's3TaskView',
-      _t('tv_title'),
+      title,
       { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
       { enableScripts: true, retainContextWhenHidden: true }
     );
     panel.iconPath = new vscode.ThemeIcon('checklist');
-    TaskViewPanel.currentPanel = new TaskViewPanel(panel);
+    TaskViewPanel.currentPanel = new TaskViewPanel(panel, connectionId, connectionName);
   }
 
-  private constructor(panel: vscode.WebviewPanel) {
+  private constructor(panel: vscode.WebviewPanel, connectionId: string, connectionName?: string) {
     this._panel = panel;
+    this._connectionId = connectionId;
+    this._connectionName = connectionName || '';
     panel.onDidDispose(() => this.dispose(), null, this._disposables);
     panel.webview.html = this._buildHtml();
 
@@ -37,7 +46,7 @@ export class TaskViewPanel {
 
     panel.webview.onDidReceiveMessage(msg => {
       if (msg.type === 'clearCompleted') {
-        taskManager.clearCompleted();
+        taskManager.clearCompleted(this._connectionId);
         this._panel.webview.html = this._buildHtml();
       }
     }, null, this._disposables);
@@ -48,7 +57,7 @@ export class TaskViewPanel {
   }
 
   private _buildHtml(): string {
-    const all = taskManager.tasks;
+    const all = taskManager.tasksFor(this._connectionId);
     const rows = all.length === 0
       ? `<tr><td colspan="5" class="empty">${_t('tv_empty')}</td></tr>`
       : all.map(t => this._renderRow(t)).join('');

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { ConnectionManager, S3Connection } from './connectionManager';
 import { createClient, testConnection } from './s3Client';
+import { exportConnections, importConnections } from './connectionTransfer';
 import { t, isZh } from './i18n';
 
 export class SettingsPanel {
@@ -84,6 +85,13 @@ export class SettingsPanel {
         case 'test':
           await this.handleTest(message.data);
           break;
+        case 'exportConnections':
+          await exportConnections(this.connectionManager);
+          break;
+        case 'importConnections':
+          await importConnections(this.connectionManager);
+          this.render();
+          break;
       }
     });
   }
@@ -114,6 +122,11 @@ export class SettingsPanel {
     if (!data) return;
     if (!data.name || !data.endpoint || !data.bucket || !data.accessKeyId || !data.secretAccessKey) {
       vscode.window.showErrorMessage(t('val_required'));
+      return;
+    }
+    const trimmedName = String(data.name).trim();
+    if (this.connectionManager.isNameTaken(trimmedName, this.editingId)) {
+      vscode.window.showErrorMessage(t('msg_connectionNameExists', trimmedName));
       return;
     }
     const conn: S3Connection = {
@@ -214,6 +227,9 @@ body { margin:0; padding:16px; font-family:var(--vscode-font-family); font-size:
 .empty { text-align:center; margin-top:48px; color:var(--vscode-descriptionForeground); }
 .add-btn { background:var(--vscode-button-background); color:var(--vscode-button-foreground); border:none; padding:6px 16px; cursor:pointer; border-radius:2px; font-size:var(--vscode-font-size); }
 .add-btn:hover { background:var(--vscode-button-hoverBackground); }
+.header-actions { display:flex; gap:6px; align-items:center; }
+.secondary-btn { background:none; border:1px solid var(--vscode-panel-border); color:var(--vscode-foreground); padding:5px 12px; cursor:pointer; border-radius:2px; font-size:var(--vscode-font-size); }
+.secondary-btn:hover { background:var(--vscode-list-hoverBackground); border-color:var(--vscode-focusBorder); }
 .conn-row { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; margin-bottom:4px; border-radius:4px; border:1px solid var(--vscode-panel-border); }
 .conn-row:hover { background:var(--vscode-list-hoverBackground); }
 .conn-info { display:flex; align-items:center; gap:10px; flex:1; min-width:0; }
@@ -230,12 +246,18 @@ body { margin:0; padding:16px; font-family:var(--vscode-font-family); font-size:
 <body>
 <div class="header">
   <span class="header-title">⚙️ ${t('wv_settings_title')}</span>
-  <button class="add-btn" id="addBtn">+ ${t('wv_settings_add')}</button>
+  <div class="header-actions">
+    <button class="secondary-btn" id="importBtn">⬇ ${t('cmd.importConnections')}</button>
+    <button class="secondary-btn" id="exportBtn">⬆ ${t('cmd.exportConnections')}</button>
+    <button class="add-btn" id="addBtn">+ ${t('wv_settings_add')}</button>
+  </div>
 </div>
 ${rows}
 <script>
 const vscodeApi = acquireVsCodeApi();
 document.getElementById('addBtn').addEventListener('click', () => vscodeApi.postMessage({ type: 'add' }));
+document.getElementById('exportBtn')?.addEventListener('click', () => vscodeApi.postMessage({ type: 'exportConnections' }));
+document.getElementById('importBtn')?.addEventListener('click', () => vscodeApi.postMessage({ type: 'importConnections' }));
 document.querySelectorAll('.edit-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const id = btn.closest('.conn-row').dataset.id;

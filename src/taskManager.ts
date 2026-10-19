@@ -15,6 +15,7 @@ export interface Task {
   error?: string;
   createdAt: number;
   completedAt?: number;
+  connectionId?: string;
   connectionName?: string;
   bucket?: string;
 }
@@ -43,6 +44,11 @@ class TaskManager {
 
   get tasks(): readonly Task[] {
     return this._tasks;
+  }
+
+  /** Tasks belonging to one connection (one task list per connection). */
+  tasksFor(connectionId: string): readonly Task[] {
+    return this._tasks.filter(t => t.connectionId === connectionId);
   }
 
   add(init: Omit<Task, 'id' | 'createdAt' | 'status' | 'progress'>): string {
@@ -103,8 +109,14 @@ class TaskManager {
     this._notify();
   }
 
-  clearCompleted(): void {
-    this._tasks = this._tasks.filter(x => x.status === 'in_progress' || x.status === 'queued');
+  clearCompleted(connectionId?: string): void {
+    this._tasks = this._tasks.filter(x => {
+      const keep = x.status === 'in_progress' || x.status === 'queued';
+      if (keep) return true;
+      // When scoped to a connection, only clear that connection's finished tasks
+      if (connectionId && x.connectionId !== connectionId) return true;
+      return false;
+    });
     this._notify();
     this._save();
   }

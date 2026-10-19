@@ -47,6 +47,12 @@ export class ConnectionManager {
     return this._connections.find(c => c.id === id);
   }
 
+  /** Check whether a connection name is already in use (trimmed comparison). */
+  isNameTaken(name: string, excludeId?: string): boolean {
+    const n = name.trim();
+    return this._connections.some(c => c.name.trim() === n && c.id !== excludeId);
+  }
+
   async addConnection(params: S3Connection): Promise<S3Connection> {
     const id = `s3-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
     const conn: S3Connection = { ...params, id };

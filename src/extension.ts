@@ -4,7 +4,6 @@ import { S3ExplorerProvider } from './treeView';
 import { registerCommands } from './commands';
 import { JumpHistory } from './jumpHistory';
 import { taskManager } from './taskManager';
-import { TaskViewPanel } from './taskViewPanel';
 import { initI18n } from './i18n';
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -20,14 +19,4 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   registerCommands(context, connectionManager, treeProvider, jumpHistory);
-
-  context.subscriptions.push(
-    vscode.window.registerWebviewPanelSerializer('s3TaskView', {
-      async deserializeWebviewPanel(panel: vscode.WebviewPanel) {
-        // Recreate the task view with its persisted task list content
-        try { panel.dispose(); } catch { /* already disposed */ }
-        TaskViewPanel.createOrShow();
-      }
-    })
-  );
 }

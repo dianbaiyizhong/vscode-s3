@@ -4,9 +4,9 @@ import { S3ExplorerProvider, S3TreeItem } from './treeView';
 import { t } from './i18n';
 import { JumpHistory } from './jumpHistory';
 import { FolderBrowserPanel } from './folderBrowserPanel';
-import { TaskViewPanel } from './taskViewPanel';
 import { SettingsPanel } from './settingsPanel';
 import { createClient, getBucketInfo, BucketInfo } from './s3Client';
+import { exportConnections, importConnections } from './connectionTransfer';
 
 let jumpHistory: JumpHistory;
 let connManager: ConnectionManager;
@@ -45,8 +45,11 @@ export function registerCommands(
     vscode.commands.registerCommand('s3.bucketInfo', (item: S3TreeItem) =>
       handleBucketInfo(item)
     ),
-    vscode.commands.registerCommand('s3.openTaskView', () =>
-      TaskViewPanel.createOrShow()
+    vscode.commands.registerCommand('s3.exportConnections', () =>
+      exportConnections(connectionManager)
+    ),
+    vscode.commands.registerCommand('s3.importConnections', () =>
+      importConnections(connectionManager)
     ),
     vscode.window.registerWebviewPanelSerializer('folderBrowser', {
       async deserializeWebviewPanel(webviewPanel, state) {

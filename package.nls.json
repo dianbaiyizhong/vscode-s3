@@ -20,5 +20,6 @@
   "cmd.getInfo": "Get Info",
   "cmd.openConnection": "Open Connection",
   "cmd.bucketInfo": "Bucket Info...",
-  "cmd.openTaskView": "Open Task View"
+  "cmd.exportConnections": "Export Connections...",
+  "cmd.importConnections": "Import Connections..."
 }

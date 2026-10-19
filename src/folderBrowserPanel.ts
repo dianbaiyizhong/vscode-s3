@@ -365,6 +365,7 @@ export class FolderBrowserPanel {
                     size: files[i].size || 0,
                     source: `${conn.bucket}/${files[i].key}`,
                     destination: destPath,
+                    connectionId: this.connectionId,
                     connectionName: conn.name,
                     bucket: conn.bucket,
                   });
@@ -1016,6 +1017,7 @@ export class FolderBrowserPanel {
                   fileName,
                   source: key,
                   destination: `${conn.bucket}/${key}`,
+                  connectionId: this.connectionId,
                   connectionName: conn.name,
                   bucket: conn.bucket,
                 });
@@ -1076,6 +1078,7 @@ export class FolderBrowserPanel {
               size: fileSize,
               source: fileName,
               destination: `${conn2.bucket}/${this.prefix}${fileName}`,
+              connectionId: this.connectionId,
               connectionName: conn2.name,
               bucket: conn2.bucket,
             });
@@ -1179,6 +1182,7 @@ export class FolderBrowserPanel {
             size: pathFileSize,
             source: filePath,
             destination: `${conn4.bucket}/${this.prefix}${pathFileName}`,
+            connectionId: this.connectionId,
             connectionName: conn4.name,
             bucket: conn4.bucket,
           });
@@ -1194,7 +1198,8 @@ export class FolderBrowserPanel {
           break;
         }
         case 'openTaskView': {
-          TaskViewPanel.createOrShow();
+          // One task list per connection — open this connection's list
+          TaskViewPanel.createOrShow(this.connectionId, this.connectionName);
           break;
         }
       }
@@ -1210,6 +1215,7 @@ export class FolderBrowserPanel {
       size: item.size || 0,
       source: `${conn.bucket}/${item.key}`,
       destination: destPath,
+      connectionId: this.connectionId,
       connectionName: conn.name,
       bucket: conn.bucket,
     });
@@ -1277,6 +1283,7 @@ export class FolderBrowserPanel {
             size: fs.statSync(localPath).size,
             source: localPath,
             destination: `${conn.bucket}/${remoteKey}`,
+            connectionId: this.connectionId,
             connectionName: conn.name,
             bucket: conn.bucket,
           });
